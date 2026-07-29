@@ -1,0 +1,19 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "Runwake",
+  "outputfilename": "Runwake",
+  "frontend:install": "",
+  "frontend:build": "",
+  "frontend:dev:watcher": "",
+  "frontend:dev:serverUrl": "",
+  "author": {
+    "name": "Runwake"
+  },
+  "info": {
+    "companyName": "Runwake",
+    "productName": "Runwake",
+    "productVersion": "0.1.0",
+    "copyright": "Copyright 2026 Runwake",
+    "comments": "Runwake desktop application"
+  }
+}
