@@ -2339,20 +2339,35 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
         <div id="log-filter-panel" class="log-tool-panel" hidden>
           <div class="log-tool-panel-heading"><div><strong>Filters</strong></div><button class="btn ghost small" data-action="clear-log-filters" disabled>Reset</button></div>
           <div class="log-filter-grid">
-            <div class="log-filter-query">
+            <div class="log-filter-primary">
               <label>Level<select id="log-level-filter"><option value="">All levels</option><option value="error">Errors</option><option value="warning">Warnings</option><option value="info">Info</option><option value="debug">Debug / trace</option><option value="system">Runtime events</option></select></label>
               <label>Source<select id="log-source-filter"><option value="">All sources</option></select></label>
-              <label>HTTP path<input id="log-http-path-filter" class="field mono" placeholder="/v1/auth"></label>
-              <label>Method<select id="log-http-method-filter"><option value="">Any method</option><option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option><option>DELETE</option><option>OPTIONS</option><option>HEAD</option></select></label>
-              <label>Status<select id="log-http-status-filter"><option value="">Any status</option><option value="2xx">2xx</option><option value="3xx">3xx</option><option value="4xx">4xx</option><option value="5xx">5xx</option></select></label>
-              <label>Find mode<select id="log-find-mode"><option value="text">Plain text</option><option value="regex">Regular expression</option></select></label>
-              <label>Lines before<input id="log-context-before" class="field" type="number" min="0" max="100" value="0"></label>
-              <label>Lines after<input id="log-context-after" class="field" type="number" min="0" max="100" value="0"></label>
             </div>
-            <div class="log-filter-stream" aria-label="Stream options">
-              <label class="toggle"><input id="stream-previous" type="checkbox" checked> Previous logs</label>
-              <label>Initial tail<input id="stream-tail" class="field" type="number" min="0" max="100000" value="${html(state.settings?.default_tail_lines ?? 200)}"></label>
-              <div class="log-stream-actions"><button class="btn small" data-action="reconnect-stream">Reconnect</button><button class="btn small danger" data-action="clear-stream">Clear buffer</button></div>
+            <div class="log-filter-more">
+              <details class="log-filter-disclosure">
+                <summary><span>Request filters</span><small>Path, method, status</small><span class="log-filter-chevron" aria-hidden="true">›</span></summary>
+                <div class="log-filter-detail-grid request">
+                  <label>HTTP path<input id="log-http-path-filter" class="field mono" placeholder="/v1/auth"></label>
+                  <label>Method<select id="log-http-method-filter"><option value="">Any method</option><option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option><option>DELETE</option><option>OPTIONS</option><option>HEAD</option></select></label>
+                  <label>Status<select id="log-http-status-filter"><option value="">Any status</option><option value="2xx">2xx</option><option value="3xx">3xx</option><option value="4xx">4xx</option><option value="5xx">5xx</option></select></label>
+                </div>
+              </details>
+              <details class="log-filter-disclosure">
+                <summary><span>Search options</span><small>Plain text, no context</small><span class="log-filter-chevron" aria-hidden="true">›</span></summary>
+                <div class="log-filter-detail-grid search">
+                  <label>Find mode<select id="log-find-mode"><option value="text">Plain text</option><option value="regex">Regular expression</option></select></label>
+                  <label>Lines before<input id="log-context-before" class="field" type="number" min="0" max="100" value="0"></label>
+                  <label>Lines after<input id="log-context-after" class="field" type="number" min="0" max="100" value="0"></label>
+                </div>
+              </details>
+              <details class="log-filter-disclosure">
+                <summary><span>Stream options</span><small>Previous logs, ${html(state.settings?.default_tail_lines ?? 200)} lines</small><span class="log-filter-chevron" aria-hidden="true">›</span></summary>
+                <div class="log-filter-detail-grid stream" aria-label="Stream options">
+                  <label class="toggle"><input id="stream-previous" type="checkbox" checked> Previous logs</label>
+                  <label>Initial tail<input id="stream-tail" class="field" type="number" min="0" max="100000" value="${html(state.settings?.default_tail_lines ?? 200)}"></label>
+                  <div class="log-stream-actions"><button class="btn small" data-action="reconnect-stream">Reconnect</button><button class="btn small danger" data-action="clear-stream">Clear buffer</button></div>
+                </div>
+              </details>
             </div>
           </div>
           <div id="log-filter-error" class="log-inline-error" hidden></div>
