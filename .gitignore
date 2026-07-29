@@ -1,0 +1,37 @@
+# Local assistant and tool configuration
+.codex/
+.impeccable/config.local.json
+
+# Runtime state and credentials
+/data/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.kubeconfig
+
+# Generated binaries and release artifacts
+/bin/
+/dist/
+/desktop-wails/build/bin/
+/desktop-wails/frontend/wailsjs/
+
+# Test and profiling output
+coverage.out
+*.coverprofile
+*.prof
+*.test
+
+# Logs and temporary files
+*.log
+*.tmp
+*.swp
+*~
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
