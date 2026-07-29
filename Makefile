@@ -63,6 +63,8 @@ vuln: vuln-install
 
 check: format-check test vet lint
 	node --check webembed/dist/app.js
+	node --check webembed/dist/terminal-text.js
+	node webembed/terminal_text_test.js
 
 run:
 	go run ./cmd/runwake serve --data-dir ./data --open
