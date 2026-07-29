@@ -126,6 +126,11 @@ Verify the archives:
 
 Native desktop signing, notarization, and installers are separate platform release tasks.
 
+Pushing a semantic-version tag such as `v1.2.3` runs the release workflow. It
+uploads the server archives and macOS application to the matching GitHub
+Release, and publishes multi-platform container images as
+`ghcr.io/doout/runwake:1.2.3` and `ghcr.io/doout/runwake:latest`.
+
 ## Useful Make targets
 
 ```text
