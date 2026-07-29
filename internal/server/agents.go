@@ -382,7 +382,14 @@ func (s *Server) handleActivityStream(w http.ResponseWriter, r *http.Request) {
 			return
 		case record, ok := <-records:
 			if !ok {
-				return
+				// A finite source (for example, logs from an exited Docker
+				// container) can end normally. Keep the SSE response alive so
+				// EventSource does not reconnect and request the same tail
+				// repeatedly.
+				records = nil
+				_, _ = io.WriteString(w, "event: activity-end\ndata: {}\n\n")
+				flusher.Flush()
+				continue
 			}
 			data, _ := json.Marshal(record)
 			_, _ = fmt.Fprintf(w, "id: %d\nevent: activity\ndata: %s\n\n", record.Sequence, data)
