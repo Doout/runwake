@@ -78,6 +78,8 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#039;");
 
+  const terminalLogText = value => window.RunwakeTerminal?.render(value) ?? String(value ?? "");
+
   function filterValues(value) {
     if (Array.isArray(value)) return value.filter(Boolean);
     return value ? [value] : [];
@@ -3169,7 +3171,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     if (filter.httpMethod && httpMethod !== filter.httpMethod) return false;
     if (filter.httpStatus && httpStatus !== filter.httpStatus) return false;
     if (!filter.needle) return true;
-    const haystack = [record.message, record.type, record.level, origin, JSON.stringify(enrichedFields)].join(" ").slice(0, 65536);
+    const haystack = [terminalLogText(record.message), record.type, record.level, origin, JSON.stringify(enrichedFields)].join(" ").slice(0, 65536);
     return filter.regex ? filter.regex.test(haystack) : haystack.toLowerCase().includes(filter.needle.toLowerCase());
   }
 
@@ -3352,24 +3354,25 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     const mode = profile.overrides?.get(key) || profile.mode || "auto";
     const raw = String(record.message || "");
     if (mode === "raw") return { text: raw, structured: null };
-    if (mode === "stack") return { text: formatStackTrace(raw), structured: null };
+    const rendered = terminalLogText(raw);
+    if (mode === "stack") return { text: formatStackTrace(rendered), structured: null };
     if (mode === "custom") {
-      const custom = applyCustomLogFormatter(raw, profile);
-      return custom ? { text: custom.text, structured: custom.structured } : { text: raw, structured: null };
+      const custom = applyCustomLogFormatter(rendered, profile);
+      return custom ? { text: custom.text, structured: custom.structured } : { text: rendered, structured: null };
     }
     if (mode === "json") {
       try {
-        const fields = JSON.parse(raw);
-        if (fields && typeof fields === "object" && !Array.isArray(fields)) return { text: raw, structured: structuredLog(fields) };
+        const fields = JSON.parse(rendered);
+        if (fields && typeof fields === "object" && !Array.isArray(fields)) return { text: rendered, structured: structuredLog(fields) };
       } catch {
-        return { text: raw, structured: null };
+        return { text: rendered, structured: null };
       }
     }
     if (mode === "logfmt") {
-      const fields = parseLogfmtFields(raw);
-      return Object.keys(fields).length ? { text: raw, structured: structuredLog(fields) } : { text: raw, structured: null };
+      const fields = parseLogfmtFields(rendered);
+      return Object.keys(fields).length ? { text: rendered, structured: structuredLog(fields) } : { text: rendered, structured: null };
     }
-    return { text: raw, structured: structuredLogForRecord(record) };
+    return { text: rendered, structured: structuredLogForRecord({ ...record, message: rendered }) };
   }
 
   function formatStackTrace(value) {
