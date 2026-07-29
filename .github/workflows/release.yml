@@ -142,8 +142,16 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v8
+      - name: Download server artifacts
+        uses: actions/download-artifact@v8
         with:
+          name: server-${{ needs.prepare.outputs.version }}
+          path: release
+
+      - name: Download desktop artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: desktop-${{ needs.prepare.outputs.version }}
           path: release
 
       - name: Publish GitHub release
