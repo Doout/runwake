@@ -2062,12 +2062,12 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
 
         <details class="settings-group settings-group-disclosure">
           <summary>
-            <span><strong>Kubernetes credential helpers</strong><small>Controls whether kubeconfigs may run external authentication commands.</small></span>
+            <span><strong>Legacy Kubernetes over SSH</strong><small>External commands are used only for Kubernetes connections routed through an SSH host.</small></span>
             <span class="settings-group-summary"><span class="settings-policy-label">${settings.exec_plugin_policy === "deny" ? "Never run" : settings.exec_plugin_policy === "allow" ? "Any helper" : "Known helpers"}</span><span class="settings-chevron">›</span></span>
           </summary>
           <div class="settings-group-body">
             <div class="settings-security-layout">
-              <label>kubectl executable<input class="field mono" name="kubectl_path" value="${html(settings.kubectl_path || "kubectl")}"><span class="hint">Executable name or absolute path on this host.</span></label>
+              <label>Default remote kubectl executable<input class="field mono" name="kubectl_path" value="${html(settings.kubectl_path || "kubectl")}"><span class="hint">Used only on SSH hosts; direct connections call the Kubernetes API.</span></label>
               <fieldset class="policy-choices">
                 <legend>Credential helper policy</legend>
                 ${settingsPolicyChoice("deny", "Never run", "Static tokens and certificates only.", settings.exec_plugin_policy)}
@@ -4182,16 +4182,16 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     </div>
     <details id="kube-advanced-options" class="kube-overrides">
       <summary>
-        <span class="kube-overrides-copy"><strong>Cluster access overrides</strong><small>Context, kubectl path, credential plugins, and environment</small></span>
+        <span class="kube-overrides-copy"><strong>Cluster access overrides</strong><small>Context and legacy SSH connection options</small></span>
         <span class="kube-overrides-toggle"><span class="kube-overrides-action"><span class="when-closed">Configure</span><span class="when-open">Hide</span></span><span class="kube-overrides-chevron" aria-hidden="true">›</span></span>
       </summary>
       <div class="kube-overrides-body">
         <div class="form-grid">
           <label class="full">Context override<input class="field mono" name="context" placeholder="production"></label>
-          <label>kubectl executable<input class="field mono" name="kubectl_path" placeholder="${html(settings.kubectl_path || "kubectl")}"></label>
-          <label>Exec credential plugins<select name="exec_policy"><option value="deny" ${settings.exec_plugin_policy === "deny" ? "selected" : ""}>Deny</option><option value="allowlist" ${settings.exec_plugin_policy === "allowlist" ? "selected" : ""}>Allow listed commands</option><option value="allow" ${settings.exec_plugin_policy === "allow" ? "selected" : ""}>Allow all kubeconfig exec commands</option></select></label>
-          <label class="full">Allowed exec commands<input class="field mono" name="exec_allowlist" value="${html((settings.exec_plugin_allowlist || []).join(", "))}"><span class="hint">Examples include aws, oc, az, gcloud, kubelogin, and custom organization login tools.</span></label>
-          <label class="full">Environment overrides<textarea class="mono" name="environment" placeholder="AWS_PROFILE=production&#10;AZURE_CONFIG_DIR=/runwake/azure"></textarea><span class="hint">One KEY=value pair per line. Passed to kubectl and exec credential plugins for this connection.</span></label>
+          <label id="kube-kubectl-field" hidden>Remote kubectl executable<input class="field mono" name="kubectl_path" placeholder="${html(settings.kubectl_path || "kubectl")}"></label>
+          <label id="kube-exec-policy-field" hidden>Exec credential plugins<select name="exec_policy"><option value="deny" ${settings.exec_plugin_policy === "deny" ? "selected" : ""}>Deny</option><option value="allowlist" ${settings.exec_plugin_policy === "allowlist" ? "selected" : ""}>Allow listed commands</option><option value="allow" ${settings.exec_plugin_policy === "allow" ? "selected" : ""}>Allow all kubeconfig exec commands</option></select></label>
+          <label id="kube-exec-allowlist-field" class="full" hidden>Allowed exec commands<input class="field mono" name="exec_allowlist" value="${html((settings.exec_plugin_allowlist || []).join(", "))}"><span class="hint">Examples include aws, oc, az, gcloud, kubelogin, and custom organization login tools.</span></label>
+          <label id="kube-environment-field" class="full" hidden>Environment overrides<textarea class="mono" name="environment" placeholder="AWS_PROFILE=production&#10;AZURE_CONFIG_DIR=/runwake/azure"></textarea><span class="hint">Passed to kubectl and credential plugins on the SSH host.</span></label>
         </div>
       </div>
     </details>`;
@@ -4353,7 +4353,11 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     if (!document.getElementById("kube-transport")) return;
     setSSHFieldsVisible(useSSH);
     const accessHint = document.getElementById("runtime-access-hint");
-    if (accessHint) accessHint.textContent = useSSH ? "kubectl runs on the selected SSH host." : "kubectl runs on this computer.";
+    if (accessHint) accessHint.textContent = useSSH ? "kubectl runs on the selected SSH host." : "Runwake connects directly to the Kubernetes API; kubectl is not required.";
+    for (const id of ["kube-kubectl-field", "kube-exec-policy-field", "kube-exec-allowlist-field", "kube-environment-field"]) {
+      const field = document.getElementById(id);
+      if (field) field.hidden = !useSSH;
+    }
     const source = document.getElementById("kube-source");
     const path = document.querySelector('[name="kubeconfig_path"]');
     const hint = document.getElementById("kube-path-hint");
@@ -4366,7 +4370,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     if (path && useSSH && (!path.value || path.value === "~/.kube/config")) path.value = "~/.kube/config";
     if (hint) hint.textContent = useSSH
       ? "The path, referenced files, kubectl, and credential helpers must exist on the SSH host."
-      : "The path, referenced CA files, client certificates, and exec commands must exist on this computer.";
+      : "The path and any referenced CA or client-certificate files must exist on this computer.";
     updateHTTPProxyFields();
     updateKubeSourceFields();
   }

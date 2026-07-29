@@ -33,7 +33,10 @@ func (f *DirectFactory) ProviderFor(connection model.Connection) (Provider, erro
 	}
 	switch connection.Kind {
 	case model.ConnectionKubernetes:
-		return kube.NewKubectlProvider(connection, f.Secrets, f.Settings), nil
+		if connection.SSH != nil {
+			return kube.NewKubectlProvider(connection, f.Secrets, f.Settings), nil
+		}
+		return kube.NewKubeconfigProvider(connection, f.Secrets, f.Settings)
 	case model.ConnectionDocker:
 		return newDockerProvider(connection, f.Secrets)
 	default:

@@ -8,7 +8,7 @@ Browser or native WebView
         ▼
 runwake server
         │
-        ├── Kubernetes through kubectl
+        ├── Kubernetes HTTP API
         └── Docker Engine API
 ```
 
@@ -22,7 +22,7 @@ runwake server
 
 ## Core packages
 
-- `internal/kube` — direct Kubernetes access through `kubectl`;
+- `internal/kube` — direct Kubernetes API access and kubeconfig parsing;
 - `internal/dockerapi` — Docker Engine inventory, events, logs, metrics, and Compose metadata;
 - `internal/provider` — normalized provider interfaces;
 - `internal/activity` — shared on-demand streams, bounded replay, and fan-out;
@@ -79,8 +79,8 @@ the API shape.
 ## Kubernetes flow
 
 1. Resolve the kubeconfig and selected context.
-2. enforce the configured exec-credential policy.
-3. Run `kubectl` with connection-specific environment variables.
+2. Load static credentials and TLS configuration from the selected user and cluster.
+3. Call the Kubernetes HTTP API directly without invoking `kubectl`.
 4. List permitted workloads and resolve selected workloads to Pods.
 5. Open Pod/container log streams and optional event watches.
 6. Read `metrics.k8s.io` when available.

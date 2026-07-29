@@ -7,7 +7,6 @@ This guide contains local setup, build, test, packaging, and repository details.
 - Go 1.23 or newer for the server.
 - Go 1.25 or newer for the full contributor checks and native desktop shell.
 - Node.js for the embedded JavaScript syntax check.
-- `kubectl` for direct Kubernetes connections.
 - Docker for container builds and Docker integration testing.
 - Wails v2.13.0 only when building the optional native desktop shell.
 
@@ -65,16 +64,10 @@ Live infrastructure results and remaining coverage are tracked in [verification.
 
 ## Docker images
 
-Build the default server image, which includes `kubectl`:
+Build the default dependency-free server image:
 
 ```sh
 docker build -t runwake:0.1.0 .
-```
-
-Build the smaller server image for Docker-only installations:
-
-```sh
-docker build --target runwake-slim -t runwake:0.1.0-slim .
 ```
 
 Remote agents are not part of the `0.1.x` build.

@@ -32,6 +32,9 @@ type InClusterProvider struct {
 	connectionName string
 	baseURL        string
 	token          string
+	username       string
+	password       string
+	authentication string
 	client         *http.Client
 	namespaces     []string
 	tailLines      int
@@ -76,6 +79,7 @@ func NewInClusterProvider(connectionID, connectionName string, namespaces []stri
 		connectionName: connectionName,
 		baseURL:        "https://" + host + ":" + port,
 		token:          strings.TrimSpace(string(tokenBytes)),
+		authentication: "service-account",
 		client:         &http.Client{Transport: transport},
 		namespaces:     append([]string(nil), namespaces...),
 		tailLines:      tailLines,
@@ -94,7 +98,11 @@ func (p *InClusterProvider) request(ctx context.Context, method, path string, bo
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+p.token)
+	if p.token != "" {
+		req.Header.Set("Authorization", "Bearer "+p.token)
+	} else if p.username != "" {
+		req.SetBasicAuth(p.username, p.password)
+	}
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("User-Agent", "runwake-agent/0.1")
 	resp, err := p.client.Do(req)
@@ -125,7 +133,7 @@ func (p *InClusterProvider) Test(ctx context.Context) (model.ProviderInfo, error
 	if err := p.getJSON(ctx, "/version", &version); err != nil {
 		return model.ProviderInfo{}, err
 	}
-	return model.ProviderInfo{State: "connected", Details: map[string]string{"server": version.GitVersion, "authentication": "service-account"}}, nil
+	return model.ProviderInfo{State: "connected", Details: map[string]string{"server": version.GitVersion, "authentication": p.authentication}}, nil
 }
 
 func (p *InClusterProvider) Namespaces(ctx context.Context) ([]string, error) {

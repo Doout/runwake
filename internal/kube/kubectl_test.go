@@ -1,10 +1,17 @@
 package kube
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/Doout/runwake/internal/model"
 )
 
 func TestMergeEnvironmentOverridesWithoutDuplicates(t *testing.T) {
@@ -142,6 +149,96 @@ func TestInClusterWorkloadItemsReceiveKindBeforeParsing(t *testing.T) {
 	}
 	if len(workloads) != 2 || workloads[0].Kind != "Pod" || workloads[0].Name != "shell" || workloads[1].Kind != "Deployment" || workloads[1].Name != "web" {
 		t.Fatalf("unexpected workloads: %#v", workloads)
+	}
+}
+
+func TestKubeconfigProviderUsesAPIWithoutKubectl(t *testing.T) {
+	const token = "direct-api-token"
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer "+token {
+			t.Errorf("authorization = %q", got)
+		}
+		switch r.URL.Path {
+		case "/version":
+			_, _ = w.Write([]byte(`{"gitVersion":"v1.32.1"}`))
+		case "/api/v1/namespaces":
+			_, _ = w.Write([]byte(`{"items":[{"metadata":{"name":"default"}},{"metadata":{"name":"apps"}}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	config := fmt.Sprintf(`apiVersion: v1
+kind: Config
+current-context: test
+clusters:
+  - name: cluster
+    cluster:
+      server: %s
+      insecure-skip-tls-verify: true
+contexts:
+  - name: test
+    context:
+      cluster: cluster
+      user: user
+users:
+  - name: user
+    user:
+      token: %s
+`, server.URL, token)
+	path := t.TempDir() + "/config"
+	if err := os.WriteFile(path, []byte(config), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	connection := model.Connection{
+		ID: "connection", Name: "cluster", Kind: model.ConnectionKubernetes,
+		Kubernetes: &model.KubernetesConnection{KubeconfigSource: "path", KubeconfigPath: path},
+	}
+	provider, err := NewKubeconfigProvider(connection, nil, model.DefaultSettings)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := provider.Test(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Details["server"] != "v1.32.1" {
+		t.Fatalf("server version = %q", info.Details["server"])
+	}
+	if info.Details["authentication"] != "bearer-token" {
+		t.Fatalf("authentication = %q", info.Details["authentication"])
+	}
+	namespaces, err := provider.Namespaces(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(namespaces, ",") != "apps,default" {
+		t.Fatalf("namespaces = %#v", namespaces)
+	}
+}
+
+func TestFlattenKubeconfigRejectsExecCredentialBinary(t *testing.T) {
+	source := []byte(`apiVersion: v1
+current-context: test
+clusters:
+  - name: cluster
+    cluster:
+      server: https://cluster.example
+contexts:
+  - name: test
+    context:
+      cluster: cluster
+      user: user
+users:
+  - name: user
+    user:
+      exec:
+        command: aws
+`)
+	_, err := FlattenKubeconfig(source, "", "deny", nil)
+	if err == nil || !strings.Contains(err.Error(), `requires exec credential plugin "aws"`) {
+		t.Fatalf("error = %v", err)
 	}
 }
 

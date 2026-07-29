@@ -10,7 +10,9 @@ Path mode is best for laptop use:
 ~/.kube/config
 ```
 
-The kubeconfig and any referenced files are read by `kubectl` on the machine running Runwake. This supports fields such as:
+Runwake reads the selected context and calls the Kubernetes API directly. No
+`kubectl` executable is required. Referenced files are resolved relative to the
+kubeconfig on the machine running Runwake. Supported fields include:
 
 ```yaml
 certificate-authority: /path/to/ca.crt
@@ -28,7 +30,8 @@ client-key-data: ...
 
 ## Uploaded kubeconfig
 
-Runwake writes the submitted content to a mode-0600 temporary file and asks `kubectl` to produce a raw, flattened representation. The result is encrypted and the temporary file is removed.
+Runwake parses the submitted content directly, embeds its CA and client
+certificate material, and encrypts the resulting minimal kubeconfig.
 
 A kubeconfig with file references can only be flattened if those files exist on the Runwake host at import time. Otherwise, flatten it before upload:
 
@@ -49,44 +52,11 @@ users:
         args: [eks, get-token, ...]
 ```
 
-The command executes where Runwake runs. The helper binary, its configuration files, and required environment variables must therefore exist there.
-
-Examples:
-
-| Platform | Typical helper or setup |
-|---|---|
-| AWS EKS | `aws eks get-token` through the `aws` CLI |
-| OpenShift/OCP | token kubeconfig created by `oc login`, or an `oc`-based exec command |
-| GKE | `gke-gcloud-auth-plugin` and `gcloud` configuration |
-| AKS | Azure CLI and/or `kubelogin` |
-| Other clouds | any conforming kubeconfig exec credential plugin |
-
-Runwake does not bundle every cloud CLI in the default image. Extend the server image or mount the required executable and configuration.
-
-## Policy
-
-Before every Kubernetes operation, Runwake reads the selected, minified kubeconfig through `kubectl config view` and inspects the exec command.
-
-- `deny`: no exec command may run;
-- `allowlist`: the executable basename must match the configured list;
-- `allow`: any command named by the kubeconfig may run.
-
-The policy is a trust boundary. An exec-enabled kubeconfig can run a local program with the Runwake process environment and connection-specific overrides.
-
-## Environment overrides
-
-A direct Kubernetes connection can store environment variables such as:
-
-```text
-AWS_PROFILE=production
-AWS_REGION=us-east-1
-AZURE_CONFIG_DIR=/runwake/azure
-CLOUDSDK_CONFIG=/runwake/gcloud
-```
-
-They are encrypted at rest and passed only to `kubectl` and the kubeconfig credential command for that connection.
-
-Runwake validates environment variable names, disallows NUL bytes, limits the number of variables, and limits their total size.
+Direct API connections intentionally do not execute these external credential
+binaries. Use a kubeconfig containing a static token or client certificate. For
+example, OpenShift users can export the token-based kubeconfig produced after
+login. Cloud-managed clusters may require a short-lived token to be refreshed
+outside Runwake until native authentication for that provider is implemented.
 
 ## Hosted deployments
 

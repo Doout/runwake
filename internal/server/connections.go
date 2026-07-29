@@ -235,7 +235,7 @@ func (s *Server) handleConnectionDelete(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) buildConnection(ctx context.Context, request connectionRequest) (model.Connection, []string, error) {
+func (s *Server) buildConnection(_ context.Context, request connectionRequest) (model.Connection, []string, error) {
 	request.Name = strings.TrimSpace(request.Name)
 	if request.Name == "" {
 		return model.Connection{}, nil, errors.New("connection name is required")
@@ -286,8 +286,6 @@ func (s *Server) buildConnection(ctx context.Context, request connectionRequest)
 			if strings.TrimSpace(body.Kubeconfig) == "" {
 				return model.Connection{}, nil, errors.New("kubeconfig content is required")
 			}
-			temp := model.Connection{Kind: model.ConnectionKubernetes, Mode: model.ModeDirect, Kubernetes: &model.KubernetesConnection{KubectlPath: body.KubectlPath}}
-			flattener := kube.NewKubectlProvider(temp, s.secrets, s.state.Settings)
 			policy := body.ExecPolicy
 			if policy == "" {
 				policy = s.state.Settings().ExecPluginPolicy
@@ -296,7 +294,7 @@ func (s *Server) buildConnection(ctx context.Context, request connectionRequest)
 			if len(allow) == 0 {
 				allow = s.state.Settings().ExecPluginAllowlist
 			}
-			flattened, err := flattener.FlattenKubeconfig(ctx, []byte(body.Kubeconfig), body.Context, policy, allow, environment)
+			flattened, err := kube.FlattenKubeconfig([]byte(body.Kubeconfig), body.Context, policy, allow)
 			if err != nil {
 				return model.Connection{}, nil, err
 			}
@@ -307,6 +305,7 @@ func (s *Server) buildConnection(ctx context.Context, request connectionRequest)
 			secretIDs = append(secretIDs, id)
 			cfg.KubeconfigSource = "stored"
 			cfg.KubeconfigSecret = id
+			cfg.Context = "runwake"
 		default:
 			return model.Connection{}, nil, errors.New("kubeconfig source must be path or upload")
 		}

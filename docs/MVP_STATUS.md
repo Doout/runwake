@@ -16,8 +16,7 @@ This first Runwake MVP is intentionally small. It is a live viewer, not a log pl
 
 - direct connections by kubeconfig path or encrypted stored kubeconfig;
 - kubeconfig context selection;
-- CA, client certificate/key, bearer-token, and exec-plugin authentication through `kubectl`;
-- per-connection environment values for provider credential helpers;
+- CA, client certificate/key, bearer-token, and basic authentication directly through the Kubernetes API;
 - all-permitted or selected-namespace scope;
 - workload discovery for Deployments, StatefulSets, DaemonSets, Jobs, and standalone Pods;
 - on-demand current and previous container logs;

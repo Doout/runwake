@@ -4,7 +4,7 @@ ARG ALPINE_IMAGE=alpine:3.24
 
 FROM ${GO_IMAGE} AS build
 WORKDIR /src
-COPY go.mod ./
+COPY go.mod go.sum ./
 COPY cmd ./cmd
 COPY internal ./internal
 COPY webembed ./webembed
@@ -25,14 +25,5 @@ VOLUME ["/data"]
 USER 10001:10001
 ENTRYPOINT ["runwake", "serve", "--listen", "0.0.0.0:8080", "--data-dir", "/data"]
 
-# Docker-only installations can build the smaller target:
-# docker build --target runwake-slim -t runwake:slim .
-FROM runtime-base AS runwake-slim
-
-# The default image includes kubectl for direct Kubernetes connections. Cloud
-# credential helpers are intentionally not bundled; extend this stage with the
-# helpers your kubeconfig exec plugins require.
+# The image is dependency-free and talks directly to runtime APIs.
 FROM runtime-base AS runwake
-USER root
-RUN apk add --no-cache kubectl
-USER 10001:10001

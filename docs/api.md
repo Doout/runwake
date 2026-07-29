@@ -32,7 +32,8 @@ Expires the browser session cookie.
 ### `GET /api/v1/settings`
 ### `PUT /api/v1/settings`
 
-Settings include the initial log tail, metric sampling intervals, kubectl path, and exec-plugin policy.
+Settings include the initial log tail, metric sampling intervals, and legacy
+SSH Kubernetes command policy.
 
 ## Connections
 

@@ -42,14 +42,34 @@ docker compose up --build
 
 Set `RUNWAKE_AUTH_TOKEN` for a shared deployment.
 
+### Opening the macOS app
+
+Runwake's macOS app is not currently signed or notarized with Apple. Until
+signed releases are introduced, macOS may prevent the downloaded app from
+opening.
+
+If you downloaded `Runwake.app` from the official GitHub release, either
+Control-click the app, select **Open**, and confirm **Open**, or use **Open
+Anyway** in **System Settings → Privacy & Security**.
+
+You can also remove the quarantine attribute in Terminal:
+
+```sh
+xattr -dr com.apple.quarantine Runwake.app
+```
+
+Only bypass this protection for a copy you trust and downloaded from the
+official Runwake GitHub repository. Apple signing and notarization are planned
+for a future release.
+
 ## Connections
 
 Runwake supports:
 
 - Docker Engine over a local socket, SSH, HTTP, or TLS.
-- Kubernetes through a local kubeconfig, encrypted upload, or kubectl on an SSH host.
+- Kubernetes directly through its API using a local kubeconfig or encrypted upload, without requiring `kubectl`.
 - Selected Kubernetes namespaces or all permitted namespaces.
-- Kubernetes exec credential plugins with deny, allowlist, and allow policies.
+- Static bearer-token, client-certificate, and basic kubeconfig authentication.
 
 Kubernetes metrics require Metrics Server or another `metrics.k8s.io` provider. Logs, events, and inventory continue working when metrics are unavailable.
 
