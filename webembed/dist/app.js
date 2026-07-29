@@ -2319,6 +2319,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
       <section class="metric-containers"><div class="section-head"><h2 class="section-title">Containers</h2><span id="metric-source" class="hint"></span></div><div id="metric-container-table" class="table-wrap"><div class="stream-state">Waiting for samples…</div></div></section>` : `
       <section class="log-workbench inspector-collapsed" aria-label="Log workbench">
         ${scopeEnabled ? renderLogScope(targetProfile) : ""}
+        <div class="log-command-layer">
         <div class="log-commandbar">
           <div class="log-find">
             <span class="log-find-icon" aria-hidden="true">⌕</span>
@@ -2333,46 +2334,62 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
           </div>
           ${renderLogFormatMenu(logFormatterProfile(request).mode)}
           <label class="toggle log-follow"><input id="stream-follow" type="checkbox" checked> Follow</label>
-          <button class="btn small" data-action="toggle-log-filters" aria-expanded="false">Filters <span id="log-filter-count" class="log-filter-badge" hidden></span></button>
+          <button class="btn small" data-action="toggle-log-filters" aria-controls="log-filter-panel" aria-expanded="false">Filters <span id="log-filter-count" class="log-filter-badge" hidden></span></button>
           <button class="btn small" data-action="toggle-log-inspector" aria-controls="log-inspector" aria-expanded="false">Inspector</button>
           <button class="btn small" data-action="toggle-log-formatter" aria-expanded="false">Format rule</button>
           <button class="btn small icon-button" data-action="toggle-log-shortcuts" aria-label="Keyboard shortcuts" title="Keyboard shortcuts">?</button>
         </div>
-        <div id="log-filter-panel" class="log-tool-panel" hidden>
-          <div class="log-tool-panel-heading"><div><strong>Filters</strong></div><button class="btn ghost small" data-action="clear-log-filters" disabled>Reset</button></div>
+        <div id="log-filter-panel" class="log-tool-panel log-filter-popover" aria-label="Log filters" hidden>
+          <div class="log-tool-panel-heading"><div><strong>Filter logs</strong><small>Narrow this live buffer without changing it.</small></div><button class="btn ghost small" data-action="clear-log-filters" disabled>Reset</button></div>
           <div class="log-filter-grid">
             <div class="log-filter-primary">
               <label>Level<select id="log-level-filter"><option value="">All levels</option><option value="error">Errors</option><option value="warning">Warnings</option><option value="info">Info</option><option value="debug">Debug / trace</option><option value="system">Runtime events</option></select></label>
               <label>Source<select id="log-source-filter"><option value="">All sources</option></select></label>
             </div>
-            <div class="log-filter-more">
-              <details class="log-filter-disclosure">
-                <summary><span>Request filters</span><small>Path, method, status</small><span class="log-filter-chevron" aria-hidden="true">›</span></summary>
-                <div class="log-filter-detail-grid request">
-                  <label>HTTP path<input id="log-http-path-filter" class="field mono" placeholder="/v1/auth"></label>
-                  <label>Method<select id="log-http-method-filter"><option value="">Any method</option><option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option><option>DELETE</option><option>OPTIONS</option><option>HEAD</option></select></label>
-                  <label>Status<select id="log-http-status-filter"><option value="">Any status</option><option value="2xx">2xx</option><option value="3xx">3xx</option><option value="4xx">4xx</option><option value="5xx">5xx</option></select></label>
+            <div class="log-filter-builder">
+              <div id="log-filter-row-path" class="log-filter-condition" hidden>
+                <label>HTTP path<input id="log-http-path-filter" class="field mono" placeholder="/v1/auth"></label>
+                <button class="btn ghost icon-button" data-action="remove-log-filter" data-filter="path" aria-label="Remove HTTP path filter" title="Remove filter">×</button>
+              </div>
+              <div id="log-filter-row-method" class="log-filter-condition" hidden>
+                <label>Method<select id="log-http-method-filter"><option value="">Any method</option><option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option><option>DELETE</option><option>OPTIONS</option><option>HEAD</option></select></label>
+                <button class="btn ghost icon-button" data-action="remove-log-filter" data-filter="method" aria-label="Remove method filter" title="Remove filter">×</button>
+              </div>
+              <div id="log-filter-row-status" class="log-filter-condition" hidden>
+                <label>Status<select id="log-http-status-filter"><option value="">Any status</option><option value="2xx">2xx</option><option value="3xx">3xx</option><option value="4xx">4xx</option><option value="5xx">5xx</option></select></label>
+                <button class="btn ghost icon-button" data-action="remove-log-filter" data-filter="status" aria-label="Remove status filter" title="Remove filter">×</button>
+              </div>
+              <div id="log-filter-row-regex" class="log-filter-condition" hidden>
+                <label>Find mode<select id="log-find-mode"><option value="text">Plain text</option><option value="regex">Regular expression</option></select></label>
+                <button class="btn ghost icon-button" data-action="remove-log-filter" data-filter="regex" aria-label="Remove find mode filter" title="Remove filter">×</button>
+              </div>
+              <div id="log-filter-row-context" class="log-filter-condition context" hidden>
+                <label>Before<input id="log-context-before" class="field" type="number" min="0" max="100" value="0"></label>
+                <label>After<input id="log-context-after" class="field" type="number" min="0" max="100" value="0"></label>
+                <button class="btn ghost icon-button" data-action="remove-log-filter" data-filter="context" aria-label="Remove match context filter" title="Remove filter">×</button>
+              </div>
+              <div class="log-filter-add-wrap">
+                <button class="log-filter-add-button" data-action="toggle-log-filter-picker" aria-controls="log-filter-picker" aria-expanded="false"><span aria-hidden="true">+</span> Add filter</button>
+                <div id="log-filter-picker" class="log-filter-picker" hidden>
+                  <button data-action="add-log-filter" data-filter="path"><span>HTTP path</span><small>Match part of a request path</small></button>
+                  <button data-action="add-log-filter" data-filter="method"><span>Method</span><small>GET, POST, PUT, and more</small></button>
+                  <button data-action="add-log-filter" data-filter="status"><span>Status</span><small>Filter by HTTP status class</small></button>
+                  <button data-action="add-log-filter" data-filter="regex"><span>Regular expression</span><small>Interpret the search query as regex</small></button>
+                  <button data-action="add-log-filter" data-filter="context"><span>Match context</span><small>Show lines before and after matches</small></button>
                 </div>
-              </details>
-              <details class="log-filter-disclosure">
-                <summary><span>Search options</span><small>Plain text, no context</small><span class="log-filter-chevron" aria-hidden="true">›</span></summary>
-                <div class="log-filter-detail-grid search">
-                  <label>Find mode<select id="log-find-mode"><option value="text">Plain text</option><option value="regex">Regular expression</option></select></label>
-                  <label>Lines before<input id="log-context-before" class="field" type="number" min="0" max="100" value="0"></label>
-                  <label>Lines after<input id="log-context-after" class="field" type="number" min="0" max="100" value="0"></label>
-                </div>
-              </details>
-              <details class="log-filter-disclosure">
-                <summary><span>Stream options</span><small>Previous logs, ${html(state.settings?.default_tail_lines ?? 200)} lines</small><span class="log-filter-chevron" aria-hidden="true">›</span></summary>
-                <div class="log-filter-detail-grid stream" aria-label="Stream options">
-                  <label class="toggle"><input id="stream-previous" type="checkbox" checked> Previous logs</label>
-                  <label>Initial tail<input id="stream-tail" class="field" type="number" min="0" max="100000" value="${html(state.settings?.default_tail_lines ?? 200)}"></label>
-                  <div class="log-stream-actions"><button class="btn small" data-action="reconnect-stream">Reconnect</button><button class="btn small danger" data-action="clear-stream">Clear buffer</button></div>
-                </div>
-              </details>
+              </div>
             </div>
+            <details class="log-filter-stream">
+              <summary><span><strong>Stream</strong><small>Previous logs · ${html(state.settings?.default_tail_lines ?? 200)} lines</small></span><span class="log-filter-stream-action">Change <span aria-hidden="true">›</span></span></summary>
+              <div class="log-filter-stream-body">
+                <label class="toggle"><input id="stream-previous" type="checkbox" checked> Previous logs</label>
+                <label>Initial tail<input id="stream-tail" class="field" type="number" min="0" max="100000" value="${html(state.settings?.default_tail_lines ?? 200)}"></label>
+                <div class="log-stream-actions"><button class="btn small" data-action="reconnect-stream">Reconnect</button><button class="btn small danger" data-action="clear-stream">Clear buffer</button></div>
+              </div>
+            </details>
           </div>
           <div id="log-filter-error" class="log-inline-error" hidden></div>
+        </div>
         </div>
         <div id="log-formatter-panel" class="log-tool-panel" hidden>
           <div class="log-tool-panel-heading"><div><strong>Custom formatter</strong><small>Use named regular-expression captures in the output template.</small></div><button class="btn ghost small" data-action="reset-log-formatter">Reset</button></div>
@@ -3817,6 +3834,40 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     button?.setAttribute("aria-expanded", String(open));
   }
 
+  function toggleLogFilterPicker(force) {
+    const picker = document.getElementById("log-filter-picker");
+    const button = document.querySelector('[data-action="toggle-log-filter-picker"]');
+    if (!picker) return;
+    const open = force ?? picker.hidden;
+    picker.hidden = !open;
+    button?.setAttribute("aria-expanded", String(open));
+  }
+
+  function showLogFilter(filter) {
+    const row = document.getElementById(`log-filter-row-${filter}`);
+    if (!row) return;
+    row.hidden = false;
+    toggleLogFilterPicker(false);
+    requestAnimationFrame(() => row.querySelector("input, select")?.focus());
+  }
+
+  function removeLogFilter(filter) {
+    const config = {
+      path: [["log-http-path-filter", ""]],
+      method: [["log-http-method-filter", ""]],
+      status: [["log-http-status-filter", ""]],
+      regex: [["log-find-mode", "text"]],
+      context: [["log-context-before", "0"], ["log-context-after", "0"]],
+    };
+    for (const [id, value] of config[filter] || []) {
+      const input = document.getElementById(id);
+      if (input) input.value = value;
+    }
+    const row = document.getElementById(`log-filter-row-${filter}`);
+    if (row) row.hidden = true;
+    scheduleActivityRender(true);
+  }
+
   function setLogInspector(force) {
     const workbench = document.querySelector(".log-workbench");
     const inspector = document.getElementById("log-inspector");
@@ -3853,6 +3904,8 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
       const input = document.getElementById(id);
       if (input) input.value = value;
     }
+    for (const row of document.querySelectorAll(".log-filter-condition")) row.hidden = true;
+    toggleLogFilterPicker(false);
     if (state.stream) state.stream.activeMatch = -1;
     scheduleActivityRender(true);
   }
@@ -5901,6 +5954,9 @@ current-context: runwake-openshift
           if (state.stream) applyLogScope(state.stream.request, "", "");
           break;
         case "toggle-log-filters": setLogToolPanel("filters"); break;
+        case "toggle-log-filter-picker": toggleLogFilterPicker(); break;
+        case "add-log-filter": showLogFilter(target.dataset.filter || ""); break;
+        case "remove-log-filter": removeLogFilter(target.dataset.filter || ""); break;
         case "toggle-log-inspector": setLogInspector(); break;
         case "toggle-log-formatter": setLogToolPanel("formatter"); break;
         case "toggle-log-shortcuts": setLogToolPanel("shortcuts"); break;
