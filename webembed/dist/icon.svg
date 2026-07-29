@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Runwake">
+  <rect width="64" height="64" fill="#101318"/>
+  <rect x="7.5" y="7.5" width="49" height="49" rx="13" fill="#12171d" stroke="#75aaf5" stroke-width="3"/>
+  <path d="M20.5 27.5 43.5 24.5M20.5 36.5l23 3" fill="none" stroke="#75aaf5" stroke-width="3" stroke-linecap="round"/>
+</svg>
