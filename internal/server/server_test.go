@@ -106,6 +106,28 @@ type fakeFactory struct{ provider *fakeProvider }
 
 func (f fakeFactory) ProviderFor(model.Connection) (provider.Provider, error) { return f.provider, nil }
 
+type finiteActivityProvider struct{ *fakeProvider }
+
+func (p finiteActivityProvider) Stream(ctx context.Context, request model.StreamRequest, out chan<- model.ActivityRecord) error {
+	p.mu.Lock()
+	p.streams = append(p.streams, request)
+	p.mu.Unlock()
+	for _, record := range p.records {
+		select {
+		case out <- record:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return nil
+}
+
+type finiteActivityFactory struct{ provider finiteActivityProvider }
+
+func (f finiteActivityFactory) ProviderFor(model.Connection) (provider.Provider, error) {
+	return f.provider, nil
+}
+
 func newTestServer(t *testing.T, authToken string) (*Server, *store.Store, *store.SecretStore, *fakeProvider) {
 	t.Helper()
 	state, err := store.Open(t.TempDir(), model.DefaultSettings())
@@ -134,6 +156,49 @@ func newTestServer(t *testing.T, authToken string) (*Server, *store.Store, *stor
 		t.Fatal(err)
 	}
 	return s, state, secrets, p
+}
+
+func TestActivityStreamStaysOpenWhenUpstreamEnds(t *testing.T) {
+	s, state, _, fake := newTestServer(t, "")
+	connection := model.Connection{ID: "connection_test", Name: "test", Kind: model.ConnectionKubernetes, Mode: model.ModeDirect, Kubernetes: &model.KubernetesConnection{KubeconfigSource: "path", KubeconfigPath: "/tmp/test"}}
+	if err := state.SaveConnection(connection); err != nil {
+		t.Fatal(err)
+	}
+	s.activities = activity.NewManager(finiteActivityFactory{provider: finiteActivityProvider{fakeProvider: fake}})
+	server := httptest.NewServer(s.Handler())
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"/api/v1/activity/stream?connection_id=connection_test&kind=Deployment&namespace=payments&name=checkout-api", nil)
+	response, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = response.Body.Close() }()
+
+	scanner := bufio.NewScanner(response.Body)
+	foundEnd := false
+	for scanner.Scan() {
+		if scanner.Text() == "event: activity-end" {
+			foundEnd = true
+			break
+		}
+	}
+	if !foundEnd {
+		t.Fatalf("activity-end was not streamed: %v", scanner.Err())
+	}
+	for scanner.Scan() && scanner.Text() != "" {
+	}
+
+	scanResult := make(chan bool, 1)
+	go func() { scanResult <- scanner.Scan() }()
+	select {
+	case <-scanResult:
+		t.Fatal("SSE response closed after the finite upstream stream ended")
+	case <-time.After(100 * time.Millisecond):
+	}
+	cancel()
 }
 
 func TestRemoteAgentRoutesAreDisabled(t *testing.T) {

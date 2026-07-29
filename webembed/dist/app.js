@@ -2882,6 +2882,11 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
       updateLogTargetOptions(record);
       scheduleActivityRender(coalesced);
     });
+    source.addEventListener("activity-end", () => {
+      if (!state.stream || state.stream.source !== source) return;
+      state.stream.connected = false;
+      setStreamStatus("Stream ended · showing buffered records", "info");
+    });
     source.addEventListener("error", () => {
       if (!state.stream || state.stream.source !== source) return;
       state.stream.connected = false;
@@ -3218,7 +3223,12 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
   }
 
   function activityRecordDedupeKey(record) {
-    return record.sequence ? `s:${record.sequence}` : `${record.timestamp}|${record.type}|${record.pod}|${record.container}|${record.message}`;
+    // Sequence numbers identify one upstream stream only. A reconnect may
+    // restart that stream and assign new sequences to the same tailed logs.
+    const content = [record.timestamp, record.type, record.level, record.source, record.pod, record.container, record.message];
+    return content.some(value => value !== undefined && value !== null && value !== "")
+      ? `c:${JSON.stringify(content)}`
+      : `s:${record.sequence || ""}`;
   }
 
   function activityRecordKeys(record) {
