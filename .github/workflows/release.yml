@@ -1,0 +1,116 @@
+name: Release
+
+on:
+  push:
+    tags: ["v0.1.*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version without the v prefix"
+        required: true
+        default: "0.1.0"
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          version="${INPUT_VERSION:-${REF_NAME#v}}"
+          case "$version" in
+            0.1.*) ;;
+            *) echo "release version must be in the 0.1.x line" >&2; exit 1 ;;
+          esac
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  server:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache: false
+
+      - name: Build server archives
+        run: make release VERSION=${{ needs.prepare.outputs.version }}
+
+      - name: Verify checksums
+        run: cd dist && sha256sum -c SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: server-${{ needs.prepare.outputs.version }}
+          path: dist/*
+          if-no-files-found: error
+
+  desktop:
+    needs: prepare
+    runs-on: macos-14
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+          cache-dependency-path: desktop-wails/go.sum
+
+      - name: Build macOS desktop application
+        run: make desktop-build VERSION=${{ needs.prepare.outputs.version }}
+
+      - name: Verify embedded version
+        run: |
+          desktop-wails/build/bin/Runwake.app/Contents/MacOS/Runwake version \
+            | grep -Fx "${{ needs.prepare.outputs.version }}"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" \
+            desktop-wails/build/bin/Runwake.app/Contents/Info.plist \
+            | grep -Fx "${{ needs.prepare.outputs.version }}"
+
+      - name: Package desktop application
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent \
+            desktop-wails/build/bin/Runwake.app \
+            "Runwake-${{ needs.prepare.outputs.version }}-macOS.zip"
+          shasum -a 256 "Runwake-${{ needs.prepare.outputs.version }}-macOS.zip" \
+            > "Runwake-${{ needs.prepare.outputs.version }}-macOS.zip.sha256"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ needs.prepare.outputs.version }}
+          path: |
+            Runwake-${{ needs.prepare.outputs.version }}-macOS.zip
+            Runwake-${{ needs.prepare.outputs.version }}-macOS.zip.sha256
+          if-no-files-found: error
+
+  publish:
+    needs: [prepare, server, desktop]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          tag="v$VERSION"
+          if ! gh release view "$tag" >/dev/null 2>&1; then
+            gh release create "$tag" --title "Runwake $VERSION" --generate-notes
+          fi
+          find release -type f -print0 \
+            | xargs -0 gh release upload "$tag" --clobber
