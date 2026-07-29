@@ -81,7 +81,7 @@ desktop-install:
 
 desktop-build: desktop-install
 	cd desktop-wails && "$(WAILS_BIN)" build -m -nosyncgomod -trimpath -ldflags "-s -w -X github.com/Doout/runwake/internal/app.Version=$(VERSION)"
-	./scripts/build-macos-icon.sh
+	./scripts/build-macos-icon.sh "$(VERSION)"
 
 desktop: desktop-build
 	@if [ "$$(uname -s)" = "Darwin" ]; then \
