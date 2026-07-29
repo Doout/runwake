@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-28T01:40:52Z",
+  "title": "Design System: Runwake",
+  "extensions": {
+    "colorMeta": {
+      "canvas-night": { "role": "neutral", "displayName": "Canvas Night", "canonical": "#0c0f13", "tonalRamp": ["#0c0f13", "#161b22", "#232a34", "#343e4b", "#596675", "#85909b", "#bac1c8", "#eef1f4"] },
+      "signal-blue": { "role": "primary", "displayName": "Signal Blue", "canonical": "#75aaf5", "tonalRamp": ["#0d1b2e", "#15345d", "#245694", "#3579d2", "#75aaf5", "#9ec3f8", "#c8ddfb", "#edf5ff"] },
+      "healthy-green": { "role": "secondary", "displayName": "Healthy Green", "canonical": "#61cc98", "tonalRamp": ["#0d2118", "#153d2b", "#226044", "#35875f", "#61cc98", "#91ddb5", "#c0edda", "#edfaf4"] },
+      "caution-amber": { "role": "secondary", "displayName": "Caution Amber", "canonical": "#e4b55e", "tonalRamp": ["#251b09", "#483411", "#72521d", "#9d762d", "#e4b55e", "#edca87", "#f5dfb2", "#fcf5e7"] },
+      "failure-red": { "role": "secondary", "displayName": "Failure Red", "canonical": "#ed7e85", "tonalRamp": ["#2b1014", "#541e26", "#832f3a", "#b94b55", "#ed7e85", "#f2a6ab", "#f7cdd0", "#fdf0f1"] }
+    },
+    "typographyMeta": {
+      "headline": { "displayName": "Page Headline", "purpose": "Names the current operator surface." },
+      "body": { "displayName": "Interface Body", "purpose": "Instructions, labels, and recovery copy." },
+      "data": { "displayName": "Runtime Data", "purpose": "Logs, paths, commands, IDs, and measurements." }
+    },
+    "shadows": [
+      { "name": "overlay", "value": "0 24px 70px rgba(0, 0, 0, .42)", "purpose": "Only for dialogs, tooltips, and toasts that leave the page plane." }
+    ],
+    "motion": [
+      { "name": "state-fast", "value": "150ms ease-out", "purpose": "Hover, selection, and compact disclosure changes." },
+      { "name": "state-standard", "value": "220ms cubic-bezier(.2,.8,.2,1)", "purpose": "Inspector and toolbar state changes." }
+    ],
+    "breakpoints": [
+      { "name": "compact-rail", "value": "900px" },
+      { "name": "mobile-navigation", "value": "650px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The single committing action in a decision region.",
+      "html": "<button class=\"ds-btn-primary\">Save changes</button>",
+      "css": ".ds-btn-primary{min-height:36px;padding:0 13px;border:1px solid #4a8ce4;border-radius:7px;background:#3579d2;color:#fff;font:600 14px ui-sans-serif,system-ui,sans-serif}.ds-btn-primary:hover{background:#3f85dc}.ds-btn-primary:focus-visible{outline:2px solid #75aaf5;outline-offset:2px}.ds-btn-primary:disabled{opacity:.55;cursor:not-allowed}"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "A reversible or supporting operator action.",
+      "html": "<button class=\"ds-btn-secondary\">Test</button>",
+      "css": ".ds-btn-secondary{min-height:36px;padding:0 13px;border:1px solid #3b4857;border-radius:7px;background:#171d24;color:#f4f6f8;font:500 14px ui-sans-serif,system-ui,sans-serif}.ds-btn-secondary:hover{background:#1c232c;border-color:#536273}.ds-btn-secondary:focus-visible{outline:2px solid #75aaf5;outline-offset:2px}"
+    },
+    {
+      "name": "Instrument Field",
+      "kind": "input",
+      "refersTo": "field",
+      "description": "Compact input embedded in an operator panel.",
+      "html": "<input class=\"ds-field\" value=\"payments-api\" aria-label=\"Example field\">",
+      "css": ".ds-field{width:260px;min-height:38px;padding:9px 11px;border:1px solid #29323d;border-radius:7px;background:#12171d;color:#f4f6f8;font:400 14px ui-sans-serif,system-ui,sans-serif}.ds-field:focus-visible{outline:2px solid #75aaf5;outline-offset:2px}.ds-field::placeholder{color:#7f8a96}"
+    },
+    {
+      "name": "Status Signal",
+      "kind": "chip",
+      "description": "Small operational state with a matching signal dot.",
+      "html": "<span class=\"ds-status\"><i></i>Connected</span>",
+      "css": ".ds-status{display:inline-flex;align-items:center;gap:7px;padding:4px 8px;border:1px solid #28543f;border-radius:999px;background:#12271f;color:#afe5ca;font:500 12px ui-sans-serif,system-ui,sans-serif}.ds-status i{width:6px;height:6px;border-radius:50%;background:#61cc98}"
+    },
+    {
+      "name": "Registry Row",
+      "kind": "custom",
+      "description": "Aligned runtime access record with route, state, and actions.",
+      "html": "<div class=\"ds-registry\"><span class=\"ds-kind\">K</span><span><strong>Production cluster</strong><small>ubuntu@cluster · ~/.kube/config</small></span><span class=\"ds-ready\">Ready</span></div>",
+      "css": ".ds-registry{width:620px;min-height:58px;padding:10px 12px;border-bottom:1px solid #29323d;background:#12171d;color:#f4f6f8;display:grid;grid-template-columns:32px 1fr auto;align-items:center;gap:12px;font:400 13px ui-sans-serif,system-ui,sans-serif}.ds-kind{width:28px;height:28px;border:1px solid #3b4857;border-radius:7px;display:grid;place-items:center;color:#75aaf5;font-weight:700}.ds-registry strong,.ds-registry small{display:block}.ds-registry small{margin-top:3px;color:#98a3af;font:11px ui-monospace,monospace}.ds-ready{color:#afe5ca;font-size:12px}"
+    },
+    {
+      "name": "Log Evidence Row",
+      "kind": "custom",
+      "description": "Dense selectable runtime record in the evidence workbench.",
+      "html": "<div class=\"ds-log\"><time>21:12:56</time><span>INFO</span><code>LLM_INFERENCE · status 200 · duration 193ms</code></div>",
+      "css": ".ds-log{width:720px;min-height:36px;border-bottom:1px solid #1c232b;background:#0d1014;color:#dce2e8;display:grid;grid-template-columns:86px 54px 1fr;align-items:start;font:12px/1.5 ui-monospace,monospace}.ds-log>*{padding:8px}.ds-log time{color:#7f8a96}.ds-log span{color:#98a3af;font-size:11px}.ds-log:hover{background:#121923}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Fixed Operator Instrument Panel",
+    "overview": "Runwake is quiet, dense, and stable. Important controls hold their position while runtime evidence updates in place, with expression coming from precision rather than decoration.",
+    "keyCharacteristics": [
+      "Stable control positions and in-place state changes.",
+      "Dense evidence with clear hierarchy and progressive disclosure.",
+      "Monospace reserved for runtime data, paths, commands, and measurements.",
+      "Blue for action or selection; semantic colors for operational state.",
+      "Borders and tonal layers establish structure without decorative chrome."
+    ],
+    "rules": [
+      { "name": "Signal Economy", "body": "Accent and semantic colors indicate action, selection, or operational state; they are never background decoration.", "section": "colors" },
+      { "name": "Data Earns Mono", "body": "Use monospace only where character alignment, exact copying, or machine syntax matters.", "section": "typography" },
+      { "name": "Fixed Position", "body": "State changes update content and signals in place; they do not move the operator's next action.", "section": "layout" },
+      { "name": "Evidence Stays Flat", "body": "Logs, tables, settings rows, and connection registries do not use shadows.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do make common actions visible and keep advanced controls one deliberate reveal away.",
+      "Do preserve the user's place when live data arrives or a filter changes.",
+      "Do show exact counts, active filters, and recovery paths.",
+      "Do make every state and action reachable by keyboard."
+    ],
+    "donts": [
+      "Don't structure a page as a gallery of equal-weight cards.",
+      "Don't use accent colors as decoration or monospace as a technical costume.",
+      "Don't replace evidence with invented diagnoses or persist browser-only log workbench state.",
+      "Don't move, resize, or blank a working region during an in-place refresh."
+    ]
+  }
+}
