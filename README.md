@@ -34,13 +34,32 @@ runwake serve \
 
 Put hosted deployments behind HTTPS.
 
-Docker Compose is also supported:
+Or start the latest container image:
 
 ```sh
-docker compose up --build
+docker run --detach \
+  --name runwake \
+  --publish 127.0.0.1:8080:8080 \
+  --volume runwake-data:/data \
+  --volume /var/run/docker.sock:/var/run/docker.sock:ro \
+  --group-add "$(ls -Lln /var/run/docker.sock | awk '{print $4}')" \
+  ghcr.io/doout/runwake:latest
 ```
 
-Set `RUNWAKE_AUTH_TOKEN` for a shared deployment.
+Then open [http://localhost:8080](http://localhost:8080), add a Docker
+connection, and keep the default `unix:///var/run/docker.sock` endpoint.
+
+To build and run the current source with Docker Compose instead:
+
+```sh
+DOCKER_GID="$(ls -Lln /var/run/docker.sock | awk '{print $4}')" \
+  docker compose up --build --detach
+```
+
+Both container commands persist configuration in a named Docker volume. For a
+shared deployment, pass `RUNWAKE_AUTH_TOKEN` into the container and put Runwake
+behind HTTPS. The Docker socket is a privileged host capability even with a
+read-only bind mount; only expose it to images you trust.
 
 ### Opening the macOS app
 
