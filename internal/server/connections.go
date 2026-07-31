@@ -26,6 +26,7 @@ import (
 type connectionRequest struct {
 	Name         string                    `json:"name"`
 	Kind         string                    `json:"kind"`
+	AccessMode   string                    `json:"access_mode,omitempty"`
 	SkipTest     bool                      `json:"skip_test"`
 	Kubernetes   *kubernetesConnectionBody `json:"kubernetes,omitempty"`
 	Docker       *dockerConnectionBody     `json:"docker,omitempty"`
@@ -34,7 +35,8 @@ type connectionRequest struct {
 	HTTPProxy    *httpProxyBody            `json:"http_proxy,omitempty"`
 }
 type connectionUpdateRequest struct {
-	Name string `json:"name"`
+	Name       string  `json:"name"`
+	AccessMode *string `json:"access_mode,omitempty"`
 }
 type kubernetesConnectionBody struct {
 	KubeconfigSource string            `json:"kubeconfig_source"` // path | upload
@@ -107,6 +109,18 @@ func (s *Server) handleConnectionUpdate(w http.ResponseWriter, r *http.Request) 
 	if request.Name == "" {
 		writeError(w, http.StatusBadRequest, "connection name is required")
 		return
+	}
+	if request.AccessMode != nil {
+		if connection.Kind != model.ConnectionDocker || connection.Mode != model.ModeDirect {
+			writeError(w, http.StatusBadRequest, "access mode can only be changed for direct Docker connections")
+			return
+		}
+		accessMode, err := dockerAccessMode(*request.AccessMode)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		connection.AccessMode = accessMode
 	}
 	connection.Name = request.Name
 	if err := s.state.SaveConnection(connection); err != nil {
@@ -332,6 +346,11 @@ func (s *Server) buildConnection(_ context.Context, request connectionRequest) (
 		if request.Docker == nil {
 			return model.Connection{}, nil, errors.New("docker configuration is required")
 		}
+		accessMode, accessErr := dockerAccessMode(request.AccessMode)
+		if accessErr != nil {
+			return model.Connection{}, nil, accessErr
+		}
+		connection.AccessMode = accessMode
 		body := request.Docker
 		if request.SSH != nil && (strings.TrimSpace(body.TLSCA) != "" || strings.TrimSpace(body.TLSCert) != "" || strings.TrimSpace(body.TLSKey) != "" || strings.TrimSpace(body.TLSServerName) != "") {
 			return model.Connection{}, nil, errors.New("docker over SSH cannot be combined with TLS client settings")
@@ -408,6 +427,17 @@ func (s *Server) buildConnection(_ context.Context, request connectionRequest) (
 		secretIDs = append(secretIDs, proxySecret)
 	}
 	return connection, secretIDs, nil
+}
+
+func dockerAccessMode(value string) (string, error) {
+	switch strings.TrimSpace(value) {
+	case "", model.AccessReadOnly:
+		return model.AccessReadOnly, nil
+	case model.AccessManage:
+		return model.AccessManage, nil
+	default:
+		return "", errors.New("docker access mode must be read_only or manage")
+	}
 }
 
 func (s *Server) storeSSHConnection(body *sshConnectionBody) (*model.SSHConnection, string, error) {

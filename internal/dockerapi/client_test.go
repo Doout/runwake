@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -243,5 +245,65 @@ func TestDockerWorkloadIncludesComposeTopology(t *testing.T) {
 	}
 	if len(workload.Docker.Ports) != 2 || workload.Docker.Ports[0].HostPort != 18080 || workload.Docker.Ports[1].ContainerPort != 9090 {
 		t.Fatalf("ports = %#v", workload.Docker.Ports)
+	}
+}
+
+func TestDockerRuntimeActionsUseVersionedEngineEndpoints(t *testing.T) {
+	var mu sync.Mutex
+	calls := make([]string, 0)
+	engine := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		calls = append(calls, r.Method+" "+r.URL.RequestURI())
+		mu.Unlock()
+		switch {
+		case r.URL.Path == "/version":
+			_, _ = w.Write([]byte(`{"Version":"29.6.1","ApiVersion":"1.55"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1.55/containers/json":
+			_, _ = w.Write([]byte(`[
+				{"Id":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","Labels":{"com.docker.compose.project":"payments"}},
+				{"Id":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","Labels":{"com.docker.compose.project":"payments"}},
+				{"Id":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","Labels":{"com.docker.compose.project":"other"}}
+			]`))
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/restart"):
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodDelete && strings.Contains(r.URL.Path, "/containers/"):
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer engine.Close()
+
+	client, err := New(engine.URL, TLSMaterial{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const firstID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	if err = client.RestartContainer(context.Background(), firstID, 15); err != nil {
+		t.Fatal(err)
+	}
+	if err = client.DeleteContainer(context.Background(), firstID, true); err != nil {
+		t.Fatal(err)
+	}
+	restarted, err := client.RestartComposeProject(context.Background(), "payments", 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if restarted != 2 {
+		t.Fatalf("restarted = %d, want 2", restarted)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	joined := strings.Join(calls, "\n")
+	for _, want := range []string{
+		"POST /v1.55/containers/" + firstID + "/restart?t=15",
+		"DELETE /v1.55/containers/" + firstID + "?force=true&v=1",
+		"GET /v1.55/containers/json?all=1",
+		"/restart?t=20",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing call %q in:\n%s", want, joined)
+		}
 	}
 }

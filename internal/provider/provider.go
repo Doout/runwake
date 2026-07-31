@@ -24,6 +24,15 @@ type WorkloadStreamer interface {
 	StreamWorkloads(ctx context.Context, out chan<- model.Workload) error
 }
 
+// DockerController is an optional direct-provider capability. The server only
+// calls it after verifying that the saved Docker connection explicitly allows
+// runtime changes.
+type DockerController interface {
+	RestartContainer(ctx context.Context, containerID string, timeoutSeconds int) error
+	DeleteContainer(ctx context.Context, containerID string, force bool) error
+	RestartComposeProject(ctx context.Context, project string, timeoutSeconds int) (int, error)
+}
+
 type Factory interface {
 	ProviderFor(connection model.Connection) (Provider, error)
 }

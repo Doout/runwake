@@ -11,6 +11,7 @@
 - Automatic JSON, key/value, HTTP access-log, and stack-trace formatting with raw and custom formatting controls.
 - Current Docker and Kubernetes CPU and memory metrics.
 - Docker Compose topology for services, containers, networks, ports, volumes, and host paths.
+- Per-connection Docker read-only/manage access with container restart, force-delete, and Compose-project restart.
 - Reusable SSH profiles and HTTP proxy configuration.
 - Encrypted connection credentials and optional server access token.
 - Cross-platform server archives and checksums.
@@ -20,5 +21,5 @@
 
 - Remote agents are disabled and planned for a later release.
 - Logs and metric history are not stored.
-- Runwake does not modify, restart, scale, or delete workloads.
+- Kubernetes connections remain read-only; Docker mutations are limited to explicitly enabled restart and delete actions.
 - Native desktop signing, notarization, and installers are not included.

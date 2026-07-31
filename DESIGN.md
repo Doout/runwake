@@ -205,11 +205,15 @@ Controls use compact 7px corners, working surfaces use 10px corners, and protect
 - **Multiple selection:** Use multi-select only when comparing or narrowing across several scopes is useful. Keep draft choices inside the overlay with explicit `Apply` and `Clear` actions; closing or pressing Escape discards the draft. Summarize several committed values as a count in the trigger, expose their full labels through the accessible name and tooltip, and let option labels wrap instead of clipping. Single-select menus continue to commit immediately.
 - **Empty state:** Replace the result list with a compact search icon, `No results`, and one recovery sentence. The trigger and overlay do not resize.
 - **Keyboard and semantics:** Support type-ahead, Arrow keys, Home, End, Enter, and Escape with visible focus and an associated listbox. Search and scrolling stay inside the overlay.
-- **Consistency:** New or revisited user-facing dropdowns use this pattern instead of an operating-system popup. A short fixed enum may omit the search row, but keeps the same trigger, overlay, option, and selected-state treatment.
+- **The No Native Dropdown Rule:** Every new or modified user-facing dropdown uses Runwake's trigger-and-overlay pattern; do not ship a browser or operating-system `<select>` popup on a touched surface. Existing native controls migrate when their surface is revisited. A short fixed enum may omit the search row, but keeps the same trigger, overlay, option, selected-state treatment, and keyboard behavior.
 
 ### Context Menus
 
 Topology context menus use a compact node header with the same `P/S/C/N/V/H` mark as the canvas and a human-readable resource type. Actions use restrained line icons, 34px rows, and only commands that apply to the selected node. Keep navigation actions together and separate clipboard or destructive utilities with one divider. Right-click is an enhancement, not the only path: `Shift+F10` opens the same menu, arrow keys move through it, and Escape returns focus to the node.
+
+### Runtime Actions
+
+Docker connections expose a clear **Docker permissions** choice and default to **View only**. **Manage containers** is labeled in the connection registry before actions appear. Container restart/delete actions live in the fixed workload action column and the matching topology context menu; Compose restart is visible in the project header. Restart and deletion always open protected confirmation overlays that name the target, state the operational consequence, disable duplicate submission, and keep errors in the decision region. Destructive deletion uses failure red; restart remains a neutral or primary deliberate action.
 
 ### Navigation
 

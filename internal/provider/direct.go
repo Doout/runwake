@@ -154,6 +154,18 @@ func (p *dockerProvider) StreamMetrics(ctx context.Context, request model.Metric
 	return p.client.StreamMetrics(ctx, request, p.connection.Name, out)
 }
 
+func (p *dockerProvider) RestartContainer(ctx context.Context, containerID string, timeoutSeconds int) error {
+	return p.client.RestartContainer(ctx, containerID, timeoutSeconds)
+}
+
+func (p *dockerProvider) DeleteContainer(ctx context.Context, containerID string, force bool) error {
+	return p.client.DeleteContainer(ctx, containerID, force)
+}
+
+func (p *dockerProvider) RestartComposeProject(ctx context.Context, project string, timeoutSeconds int) (int, error) {
+	return p.client.RestartComposeProject(ctx, project, timeoutSeconds)
+}
+
 func UniqueNamespaces(workloads []model.Workload) []string {
 	seen := map[string]bool{}
 	for _, workload := range workloads {

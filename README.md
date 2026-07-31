@@ -1,8 +1,8 @@
 # Runwake
 
-Runwake is a lightweight viewer for Docker and Kubernetes workloads.
+Runwake is a lightweight operations viewer for Docker and Kubernetes workloads.
 
-It puts live logs, exact runtime events, and current CPU and memory usage in one small interface. It does not store logs, retain metric history, modify workloads, or guess at root causes.
+It puts live logs, exact runtime events, and current CPU and memory usage in one small interface. Connections are read-only by default. A Docker connection can explicitly allow container restart, container delete, and Compose-project restart. Runwake does not store logs, retain metric history, or guess at root causes.
 
 ## What it does
 
@@ -11,6 +11,7 @@ It puts live logs, exact runtime events, and current CPU and memory usage in one
 - Recognizes JSON and common key/value logs, with workload and per-record formatting controls for malformed output and stack traces.
 - Shows runtime state and lifecycle events beside the logs.
 - Reads current metrics from Docker or `metrics.k8s.io`.
+- Optionally restarts or deletes Docker containers and restarts Docker Compose projects on connections configured to allow changes.
 - Runs as a desktop app, single hosted binary, or container.
 
 ## Quick start
@@ -67,6 +68,7 @@ for a future release.
 Runwake supports:
 
 - Docker Engine over a local socket, SSH, HTTP, or TLS.
+- Per-connection Docker access: read-only by default, with an explicit opt-in for restart and delete actions.
 - Kubernetes directly through its API using a local kubeconfig or encrypted upload, without requiring `kubectl`.
 - Selected Kubernetes namespaces or all permitted namespaces.
 - Static bearer-token, client-certificate, and basic kubeconfig authentication.
@@ -79,7 +81,7 @@ Remote agents are planned for a later release and are disabled in `0.1.x`.
 
 Runwake encrypts stored connection credentials with AES-256-GCM.
 
-A Docker socket remains a privileged host capability even when Runwake performs read-oriented operations.
+A Docker socket remains a privileged host capability. Runwake's per-connection read-only setting gates its own API and controls; it does not reduce the Docker endpoint's underlying privileges.
 
 ## Documentation
 

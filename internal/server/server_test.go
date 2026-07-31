@@ -9,6 +9,8 @@ import (
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -35,6 +37,9 @@ type fakeProvider struct {
 	applied      []string
 	deleted      []string
 	streams      []model.StreamRequest
+	restarted    []string
+	removed      []string
+	projects     []string
 }
 
 func (p *fakeProvider) Test(context.Context) (model.ProviderInfo, error) { return p.info, nil }
@@ -100,6 +105,24 @@ func (p *fakeProvider) DeleteManifest(_ context.Context, manifest string) error 
 	defer p.mu.Unlock()
 	p.deleted = append(p.deleted, manifest)
 	return nil
+}
+func (p *fakeProvider) RestartContainer(_ context.Context, containerID string, _ int) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.restarted = append(p.restarted, containerID)
+	return nil
+}
+func (p *fakeProvider) DeleteContainer(_ context.Context, containerID string, force bool) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.removed = append(p.removed, containerID+":"+strconv.FormatBool(force))
+	return nil
+}
+func (p *fakeProvider) RestartComposeProject(_ context.Context, project string, _ int) (int, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.projects = append(p.projects, project)
+	return 3, nil
 }
 
 type fakeFactory struct{ provider *fakeProvider }
@@ -188,7 +211,10 @@ func TestActivityStreamStaysOpenWhenUpstreamEnds(t *testing.T) {
 	if !foundEnd {
 		t.Fatalf("activity-end was not streamed: %v", scanner.Err())
 	}
-	for scanner.Scan() && scanner.Text() != "" {
+	for scanner.Scan() {
+		if scanner.Text() == "" {
+			break
+		}
 	}
 
 	scanResult := make(chan bool, 1)
@@ -296,10 +322,79 @@ func TestCreateAndListDockerConnection(t *testing.T) {
 	if created.Docker == nil || created.Docker.Endpoint != "unix:///var/run/docker.sock" {
 		t.Fatalf("unexpected connection: %#v", created)
 	}
+	if created.AccessMode != model.AccessReadOnly {
+		t.Fatalf("default access mode = %q, want %q", created.AccessMode, model.AccessReadOnly)
+	}
 	list := httptest.NewRecorder()
 	h.ServeHTTP(list, httptest.NewRequest(http.MethodGet, "/api/v1/connections", nil))
 	if list.Code != http.StatusOK || !strings.Contains(list.Body.String(), `"name":"local"`) {
 		t.Fatalf("list status=%d body=%s", list.Code, list.Body.String())
+	}
+}
+
+func TestDockerRuntimeActionsRequireManagedAccess(t *testing.T) {
+	s, state, _, fake := newTestServer(t, "")
+	h := s.Handler()
+	const containerID = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	readOnly := model.Connection{
+		ID: "connection_read_only", Name: "read only", Kind: model.ConnectionDocker, Mode: model.ModeDirect,
+		AccessMode: model.AccessReadOnly, Docker: &model.DockerConnection{Endpoint: "unix:///read-only.sock"},
+	}
+	managed := model.Connection{
+		ID: "connection_managed", Name: "managed", Kind: model.ConnectionDocker, Mode: model.ModeDirect,
+		AccessMode: model.AccessManage, Docker: &model.DockerConnection{Endpoint: "unix:///managed.sock"},
+	}
+	if err := state.SaveConnection(readOnly); err != nil {
+		t.Fatal(err)
+	}
+	if err := state.SaveConnection(managed); err != nil {
+		t.Fatal(err)
+	}
+
+	denied := httptest.NewRecorder()
+	h.ServeHTTP(denied, httptest.NewRequest(http.MethodPost, "/api/v1/connections/"+readOnly.ID+"/docker/containers/"+containerID+"/restart", nil))
+	if denied.Code != http.StatusForbidden || !strings.Contains(denied.Body.String(), "read-only") {
+		t.Fatalf("read-only restart status=%d body=%s", denied.Code, denied.Body.String())
+	}
+
+	restart := httptest.NewRecorder()
+	h.ServeHTTP(restart, httptest.NewRequest(http.MethodPost, "/api/v1/connections/"+managed.ID+"/docker/containers/"+containerID+"/restart", nil))
+	if restart.Code != http.StatusOK {
+		t.Fatalf("restart status=%d body=%s", restart.Code, restart.Body.String())
+	}
+
+	remove := httptest.NewRecorder()
+	h.ServeHTTP(remove, httptest.NewRequest(http.MethodDelete, "/api/v1/connections/"+managed.ID+"/docker/containers/"+containerID+"?force=true", nil))
+	if remove.Code != http.StatusNoContent {
+		t.Fatalf("delete status=%d body=%s", remove.Code, remove.Body.String())
+	}
+
+	compose := httptest.NewRecorder()
+	h.ServeHTTP(compose, httptest.NewRequest(http.MethodPost, "/api/v1/connections/"+managed.ID+"/docker/compose/restart", strings.NewReader(`{"project":"payments"}`)))
+	if compose.Code != http.StatusOK || !strings.Contains(compose.Body.String(), `"containers":3`) {
+		t.Fatalf("compose restart status=%d body=%s", compose.Code, compose.Body.String())
+	}
+
+	fake.mu.Lock()
+	defer fake.mu.Unlock()
+	if !reflect.DeepEqual(fake.restarted, []string{containerID}) {
+		t.Fatalf("restart calls = %#v", fake.restarted)
+	}
+	if !reflect.DeepEqual(fake.removed, []string{containerID + ":true"}) {
+		t.Fatalf("delete calls = %#v", fake.removed)
+	}
+	if !reflect.DeepEqual(fake.projects, []string{"payments"}) {
+		t.Fatalf("compose calls = %#v", fake.projects)
+	}
+}
+
+func TestDockerConnectionRejectsUnknownAccessMode(t *testing.T) {
+	s, _, _, _ := newTestServer(t, "")
+	response := httptest.NewRecorder()
+	body := `{"name":"local","kind":"docker","access_mode":"admin","skip_test":true,"docker":{"endpoint":"unix:///var/run/docker.sock"}}`
+	s.Handler().ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/v1/connections", strings.NewReader(body)))
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "read_only or manage") {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
 }
 
@@ -322,7 +417,7 @@ func TestRenameConnectionPreservesConfiguration(t *testing.T) {
 	}
 
 	update := httptest.NewRecorder()
-	h.ServeHTTP(update, httptest.NewRequest(http.MethodPatch, "/api/v1/connections/"+created.ID, strings.NewReader(`{"name":"Developer Docker"}`)))
+	h.ServeHTTP(update, httptest.NewRequest(http.MethodPatch, "/api/v1/connections/"+created.ID, strings.NewReader(`{"name":"Developer Docker","access_mode":"manage"}`)))
 	if update.Code != http.StatusOK {
 		t.Fatalf("update status=%d body=%s", update.Code, update.Body.String())
 	}
@@ -332,6 +427,9 @@ func TestRenameConnectionPreservesConfiguration(t *testing.T) {
 	}
 	if stored.Name != "Developer Docker" {
 		t.Fatalf("updated name = %q", stored.Name)
+	}
+	if stored.AccessMode != model.AccessManage {
+		t.Fatalf("updated access mode = %q", stored.AccessMode)
 	}
 	if stored.Docker == nil || stored.Docker.Endpoint != "unix:///var/run/docker.sock" {
 		t.Fatalf("connection configuration changed: %#v", stored)

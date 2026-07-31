@@ -468,6 +468,43 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     </div>`;
   }
 
+  function renderFixedChoiceMenu(inputID, name, label, options, selected) {
+    const selectedOption = options.find(option => option.value === selected) || options[0];
+    const menuID = `${inputID}-menu`;
+    return `<div class="log-menu-field fixed-choice-menu" data-fixed-choice-menu data-choice-label="${html(label)}">
+      <input id="${html(inputID)}" type="hidden" name="${html(name)}" value="${html(selectedOption.value)}">
+      <button type="button" class="log-menu-trigger" data-action="toggle-log-menu" aria-label="${html(label)}: ${html(selectedOption.label)}" aria-haspopup="listbox" aria-controls="${html(menuID)}" aria-expanded="false">
+        <span data-log-menu-label>${html(selectedOption.label)}</span><span class="log-menu-chevron" aria-hidden="true"></span>
+      </button>
+      <div id="${html(menuID)}" class="log-menu fixed-choice-popover" role="listbox" aria-label="${html(label)}" hidden>
+        <div data-log-menu-options>
+          ${options.map(option => `<button type="button" class="log-menu-option fixed-choice-option ${option.value === selectedOption.value ? "selected" : ""}" role="option" aria-selected="${option.value === selectedOption.value}" data-action="select-fixed-choice" data-value="${html(option.value)}" data-label="${html(option.label)}" data-search="${html(`${option.label} ${option.description}`.toLowerCase())}">
+            <span class="fixed-choice-copy"><strong>${html(option.label)}</strong><small>${html(option.description)}</small></span><span class="log-menu-check" aria-hidden="true">✓</span>
+          </button>`).join("")}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  function selectFixedChoice(option) {
+    const field = option?.closest("[data-fixed-choice-menu]");
+    const input = field?.querySelector("input[type=hidden]");
+    const value = option?.dataset.value || "";
+    const label = option?.dataset.label || "";
+    if (!field || !input || !value || !label) return;
+    input.value = value;
+    field.querySelector("[data-log-menu-label]")?.replaceChildren(document.createTextNode(label));
+    const trigger = field.querySelector(".log-menu-trigger");
+    if (trigger) trigger.setAttribute("aria-label", `${field.dataset.choiceLabel}: ${label}`);
+    for (const item of field.querySelectorAll(".log-menu-option")) {
+      const selected = item === option;
+      item.classList.toggle("selected", selected);
+      item.setAttribute("aria-selected", String(selected));
+    }
+    closeLogMenus(true);
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
   function workloadFilterOptions(options, selected, filter, multiple = false) {
     const selectedValues = new Set(filterValues(selected));
     return options.map(option => {
@@ -790,7 +827,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
       </div>
       <div id="workload-table-scroll" class="table-wrap workload-table-scroll" tabindex="0" role="region" aria-label="Workload results">
         <table class="data-table workload-table" aria-rowcount="${items.length + 1}">
-          <thead><tr><th>Workload</th><th>Location</th><th>State</th><th>CPU</th><th>Memory</th></tr></thead>
+          <thead><tr><th>Workload</th><th>Location</th><th>State</th><th>CPU</th><th>Memory</th><th>Actions</th></tr></thead>
           <tbody>${workloadWindowRows(items, 0, initialEnd)}</tbody>
         </table>
       </div>
@@ -877,6 +914,38 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     </li>`;
   }
 
+  function dockerConnection(connectionID) {
+    return state.connections.find(item => item.id === connectionID && item.kind === "docker");
+  }
+
+  function canManageDockerConnection(connectionID) {
+    const connection = dockerConnection(connectionID);
+    return Boolean(connection && connection.mode === "direct" && connection.access_mode === "manage");
+  }
+
+  function workloadActionCell(item) {
+    if (item.platform !== "docker") return `<td class="workload-action-cell"><span aria-hidden="true">—</span></td>`;
+    if (!canManageDockerConnection(item.connection_id)) {
+      return `<td class="workload-action-cell"><span class="workload-access-note read-only" title="This Docker connection can only view workloads">View only</span></td>`;
+    }
+    if (!item.uid) {
+      return `<td class="workload-action-cell"><span class="workload-access-note unavailable" title="The Docker Engine did not return a container ID">Unavailable</span></td>`;
+    }
+    const menuID = `workload-actions-${item.connection_id}-${item.uid}`;
+    return `<td class="workload-action-cell">
+      <div class="connection-action-menu workload-action-menu">
+        <button type="button" class="connection-menu-trigger" data-action="toggle-connection-menu" aria-label="Runtime actions for ${html(item.name)}" aria-haspopup="menu" aria-controls="${html(menuID)}" aria-expanded="false">
+          <svg aria-hidden="true" viewBox="0 0 20 20"><circle cx="4" cy="10" r="1.4"></circle><circle cx="10" cy="10" r="1.4"></circle><circle cx="16" cy="10" r="1.4"></circle></svg>
+        </button>
+        <div id="${html(menuID)}" class="connection-menu" role="menu" aria-label="${html(item.name)} runtime actions" hidden>
+          <button type="button" role="menuitem" data-action="restart-docker-container" data-connection="${html(item.connection_id)}" data-container="${html(item.uid)}" data-name="${html(item.name)}">Restart container</button>
+          <div class="connection-menu-separator" role="separator"></div>
+          <button type="button" class="danger" role="menuitem" data-action="delete-docker-container" data-connection="${html(item.connection_id)}" data-container="${html(item.uid)}" data-name="${html(item.name)}">Delete container</button>
+        </div>
+      </div>
+    </td>`;
+  }
+
   function workloadRow(item, rowIndex = -1) {
     const readiness = item.desired ? `${Number(item.ready || 0)}/${item.desired} ready` : "";
     const restarts = item.restarts ? `${item.restarts} restart${item.restarts === 1 ? "" : "s"}` : "";
@@ -909,6 +978,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
       <td><span class="status ${statusBucket(item)}">${html(item.state || "Unknown")}</span><div class="cell-subtitle">${html(detail)}</div></td>
       <td data-metric-cell="cpu">${metricCPUCell(metric)}</td>
       <td data-metric-cell="memory">${metricMemoryCell(metric)}</td>
+      ${workloadActionCell(item)}
     </tr>`;
   }
 
@@ -926,7 +996,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
   }
 
   function workloadSpacerRow(height) {
-    return `<tr class="workload-virtual-spacer" aria-hidden="true"><td colspan="5" style="height:${height}px"></td></tr>`;
+    return `<tr class="workload-virtual-spacer" aria-hidden="true"><td colspan="6" style="height:${height}px"></td></tr>`;
   }
 
   function workloadResultTotal(count) {
@@ -1050,16 +1120,18 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     const connection = state.connections.find(item => item.id === request.connection_id);
     const model = dockerTopologyModel(request);
     const connectionLabel = connection?.name || request.connection_id;
+    const managed = canManageDockerConnection(request.connection_id);
     const activityRequest = topologyActivityRequest(request, model);
     shell(`<section class="page topology-page ${request.focus ? "topology-page-focused" : ""}">
       <header class="page-header topology-header">
         <div>
           <button class="btn ghost small activity-back" data-action="back-workloads">← Workloads</button>
           <h1 class="page-title activity-title">${html(request.focus || request.project)}</h1>
-          <div class="activity-meta"><button type="button" class="activity-meta-link" data-action="filter-workloads-from-topology" data-connection="${html(request.connection_id)}" aria-label="Show workloads from ${html(connectionLabel)}">${html(connectionLabel)}</button>${request.focus ? `<span>${html(request.project)}</span>` : ""}<span>Docker Compose</span><span>Observed runtime</span></div>
+          <div class="activity-meta"><button type="button" class="activity-meta-link" data-action="filter-workloads-from-topology" data-connection="${html(request.connection_id)}" aria-label="Show workloads from ${html(connectionLabel)}">${html(connectionLabel)}</button>${request.focus ? `<span>${html(request.project)}</span>` : ""}<span>Docker Compose</span><span>${managed ? "Manage containers" : "View only"}</span></div>
         </div>
         <div class="topology-header-actions">
           ${request.focus ? `<button class="btn ghost" data-action="show-full-topology" data-connection="${html(request.connection_id)}" data-project="${html(request.project)}">Full project</button>` : ""}
+          ${!request.focus && managed ? `<button class="btn" data-action="restart-compose-project" data-connection="${html(request.connection_id)}" data-project="${html(request.project)}">Restart project</button>` : ""}
           <button id="refresh-topology" class="btn" data-action="refresh-topology" data-connection="${html(request.connection_id)}" data-project="${html(request.project)}" data-focus="${html(request.focus)}" ${state.topologyRefreshing ? "disabled" : ""}>${state.topologyRefreshing ? "Refreshing…" : "Refresh"}</button>
         </div>
       </header>
@@ -1354,7 +1426,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
       container: "",
       topology_project: composeProjectName(workload),
     }));
-    return `<article id="topology-focus" class="topology-node topology-focus-node" tabindex="0" data-topology-node data-topology-role="focus" data-topology-label="${html(workload.name)}" data-topology-connection="${html(workload.connection_id)}" data-topology-project="${html(composeProjectName(workload))}" data-topology-request="${activityRequest}" data-topology-openable="true" data-topology-targets="${html(targetIDs.join(" "))}" data-topology-dependencies="${html(dependencyIDs.join(" "))}" aria-label="${html(workload.name)} container. Double-click to open logs. Shift+F10 for actions.">
+    return `<article id="topology-focus" class="topology-node topology-focus-node" tabindex="0" data-topology-node data-topology-role="focus" data-topology-label="${html(workload.name)}" data-topology-connection="${html(workload.connection_id)}" data-topology-project="${html(composeProjectName(workload))}" data-topology-container="${html(workload.uid || "")}" data-topology-request="${activityRequest}" data-topology-openable="true" data-topology-targets="${html(targetIDs.join(" "))}" data-topology-dependencies="${html(dependencyIDs.join(" "))}" aria-label="${html(workload.name)} container. Double-click to open logs. Shift+F10 for actions.">
       <div class="topology-node-heading"><span class="topology-node-mark">C</span><div><strong>${html(workload.name)}</strong><small>${html(service.name)}</small></div><span class="status ${statusBucket(workload)}">${html(workload.state || "Unknown")}</span>${topologyNodeToggle(workload.name, true)}</div>
       ${topologyNodeDetails(`${image ? `<div class="topology-image" title="${html(image)}">${html(image)}</div>` : ""}${ports.length ? `<div class="topology-inline-facts"><strong>Ports</strong>${ports.map(port => `<code>${html(port)}</code>`).join("")}</div>` : ""}`, true)}
     </article>`;
@@ -1531,6 +1603,8 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
       containers: '<rect x="2.5" y="3" width="11" height="4" rx="1"/><rect x="2.5" y="9" width="11" height="4" rx="1"/><path d="M5 5h.01M5 11h.01"/>',
       attachments: '<path d="M6.4 9.6 4.8 11.2a2.1 2.1 0 0 1-3-3l2.5-2.5a2.1 2.1 0 0 1 3 0M9.6 6.4l1.6-1.6a2.1 2.1 0 0 1 3 3l-2.5 2.5a2.1 2.1 0 0 1-3 0M5.8 10.2l4.4-4.4"/>',
       copy: '<rect x="5.5" y="5.5" width="7" height="7" rx="1.3"/><path d="M10.5 5.5V4.2a1.7 1.7 0 0 0-1.7-1.7H4.2a1.7 1.7 0 0 0-1.7 1.7v4.6a1.7 1.7 0 0 0 1.7 1.7h1.3"/>',
+      restart: '<path d="M12.8 5.4V2.7l-1.7 1.7A5.3 5.3 0 1 0 13 9.8"/><path d="M12.8 2.7h-2.7"/>',
+      delete: '<path d="M3.5 4.5h9M6 4.5V3h4v1.5M5 6.5l.5 6h5l.5-6"/>',
     };
     return `<svg viewBox="0 0 16 16" aria-hidden="true">${paths[name] || paths.topology}</svg>`;
   }
@@ -1559,6 +1633,8 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     const connection = node.dataset.topologyConnection || routeInfo().params.get("connection_id") || "";
     const project = node.dataset.topologyProject || routeInfo().params.get("project") || "";
     const focus = node.dataset.topologyFocus || "";
+    const containerID = node.dataset.topologyContainer || "";
+    const managed = canManageDockerConnection(connection);
     const details = node.querySelector(":scope > .topology-node-details");
     const expanded = details ? !details.hidden : false;
     const actions = [];
@@ -1581,10 +1657,16 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
         actions.push(topologyContextAction("set-all-topology-nodes", hasCollapsed ? "Expand all details" : "Collapse all details", { expanded: hasCollapsed }, hasCollapsed ? "expand" : "collapse"));
       }
       actions.push(topologyContextAction("filter-topology-node-workloads", "Show project workloads", { connection, search: project }, "workloads"));
+      if (managed) actions.push(topologyContextAction("restart-compose-project", "Restart project", { connection, project }, "restart"));
     } else if (role === "focus") {
       actions.push(topologyContextAction("open-topology-logs", "Open logs", { request: node.dataset.topologyRequest || "" }, "logs"));
       actions.push(topologyContextAction("open-topology-project", "Open project topology", { connection, project }, "topology"));
       actions.push(topologyContextAction("filter-topology-node-workloads", "Show in workloads", { connection, search: label }, "workloads"));
+      if (managed && containerID) {
+        actions.push(`<div class="topology-context-separator" role="separator"></div>`);
+        actions.push(topologyContextAction("restart-docker-container", "Restart container", { connection, container: containerID, name: label }, "restart"));
+        actions.push(topologyContextAction("delete-docker-container", "Delete container", { connection, container: containerID, name: label }, "delete"));
+      }
     } else if (role === "service" || role === "dependency") {
       if (focus) actions.push(topologyContextAction("open-topology-connected", "Open connected view", { connection, project, focus }, "connected"));
       if (details) actions.push(topologyContextAction("toggle-topology-context-node", expanded ? "Collapse details" : "Show containers", { node: node.id }, expanded ? "collapse" : "containers"));
@@ -1928,15 +2010,18 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
   function connectionRegistryRow(item) {
     const status = item.status || { state: "configured" };
     const scope = connectionScope(item);
-    const access = item.mode === "agent"
+    const route = item.mode === "agent"
       ? ((item.deployment?.mode === "temporary" || item.agent?.run_mode === "temporary") ? "Temporary agent" : item.ssh ? "SSH-managed agent" : "Remote agent")
       : item.ssh && item.http_proxy ? "SSH + HTTP proxy" : item.ssh ? "SSH" : item.http_proxy ? "HTTP proxy" : "Direct";
+    const access = item.kind === "docker"
+      ? (item.access_mode === "manage" ? "Manage containers" : "View only")
+      : "View only";
     const kindLabel = item.kind === "kubernetes" ? "Kubernetes" : "Docker";
     const symbol = item.kind === "kubernetes" ? "K" : "D";
     const contact = item.mode === "agent" ? (status.last_seen ? relativeTime(status.last_seen) : "Waiting") : "On demand";
     const menuID = `connection-actions-${item.id}`;
     return `<article class="connection-registry-row">
-      <div class="connection-runtime"><span class="connection-mark" aria-hidden="true">${symbol}</span><span><strong>${html(item.name)}</strong><small>${html(kindLabel)} · ${html(access)}</small></span></div>
+      <div class="connection-runtime"><span class="connection-mark" aria-hidden="true">${symbol}</span><span><strong>${html(item.name)}</strong><small>${html(kindLabel)} · ${html(route)} · ${html(access)}</small></span></div>
       <div class="connection-route" title="${html(scope)}"><strong>${html(scope)}</strong>${status.message ? `<small>${html(status.message)}</small>` : ""}</div>
       <span class="status ${connectionStatusClass(status.state)}">${html(status.state || "configured")}</span>
       <span class="connection-contact">${html(contact)}</span>
@@ -2697,7 +2782,15 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
 
   function focusLogMenuSearch(field, initialValue = "") {
     const search = field?.querySelector("[data-log-menu-search]");
-    if (!search) return;
+    if (!search) {
+      const options = [...(field?.querySelectorAll(".log-menu-option") || [])].filter(option => !option.hidden);
+      const needle = String(initialValue || "").toLowerCase();
+      const match = needle
+        ? options.find(option => String(option.dataset.search || option.textContent || "").trim().toLowerCase().startsWith(needle))
+        : options.find(option => option.classList.contains("selected"));
+      requestAnimationFrame(() => (match || options[0])?.focus());
+      return;
+    }
     search.value = initialValue;
     filterLogMenuOptions(field, initialValue);
     requestAnimationFrame(() => {
@@ -4285,6 +4378,14 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
       ${sshFields()}
       ${httpProxyControl()}
       <label id="docker-endpoint-field" class="full">Engine endpoint<input class="field mono" name="endpoint" value="unix:///var/run/docker.sock" required><span id="docker-endpoint-hint" class="hint" hidden></span></label>
+      <fieldset class="runtime-permission full">
+        <legend>Docker permissions</legend>
+        <div class="runtime-permission-options">
+          <label class="choice"><input type="radio" name="access_mode" value="read_only" checked><span><span class="choice-title">View only</span><span class="choice-copy">Inspect containers, logs, events, and metrics without changing workloads.</span></span></label>
+          <label class="choice"><input type="radio" name="access_mode" value="manage"><span><span class="choice-title">Manage containers</span><span class="choice-copy">Restart or delete containers, and restart Compose projects.</span></span></label>
+        </div>
+        <p class="runtime-permission-note">Runwake enforces this choice in its interface and API. The Docker endpoint itself remains privileged.</p>
+      </fieldset>
     </div>
     <details id="docker-tls-options" class="disclosure" hidden><summary>TLS client authentication</summary>
       <div class="form-grid">
@@ -5147,6 +5248,7 @@ current-context: runwake-openshift
         environment: environmentFrom(data.get("environment")),
       };
     } else {
+      payload.access_mode = String(data.get("access_mode") || "read_only");
       let endpoint = String(data.get("endpoint") || "").trim();
       if (useSSH && endpoint.startsWith("/")) endpoint = `unix://${endpoint}`;
       payload.docker = {
@@ -5439,6 +5541,15 @@ current-context: runwake-openshift
   function closeModal() { modalRoot.innerHTML = ""; }
 
   function showEditConnection(connection) {
+    const dockerAccess = connection.kind === "docker" ? `
+      <div class="connection-edit-access">
+        <span class="connection-edit-label">Docker permissions</span>
+        ${renderFixedChoiceMenu("connection-access-mode", "access_mode", "Docker permissions", [
+          { value: "read_only", label: "View only", description: "Inspect workloads without changing them." },
+          { value: "manage", label: "Manage containers", description: "Restart or delete containers and restart Compose projects." },
+        ], connection.access_mode === "manage" ? "manage" : "read_only")}
+        <span class="hint">Runwake enforces this choice. The Docker endpoint itself remains privileged.</span>
+      </div>` : "";
     showModal(`<div class="modal-header">
         <div><h2 id="edit-connection-title" class="modal-title">Edit connection</h2></div>
         <button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button>
@@ -5446,6 +5557,7 @@ current-context: runwake-openshift
       <div class="modal-body">
         <form id="edit-connection-form">
           <label>Connection name<input class="field" name="name" value="${html(connection.name)}" required></label>
+          ${dockerAccess}
           <div class="connection-edit-route">
             <span>${html(connection.kind === "kubernetes" ? "Kubernetes" : "Docker")}</span>
             <strong title="${html(connectionScope(connection))}">${html(connectionScope(connection))}</strong>
@@ -5465,13 +5577,15 @@ current-context: runwake-openshift
   async function saveConnectionEdit(id) {
     const form = document.getElementById("edit-connection-form");
     if (!form?.reportValidity()) return;
-    const name = String(new FormData(form).get("name") || "").trim();
+    const data = new FormData(form);
+    const name = String(data.get("name") || "").trim();
+    const accessMode = data.has("access_mode") ? String(data.get("access_mode")) : undefined;
     const button = modalRoot.querySelector('[data-action="save-connection-edit"]');
     if (!button) return;
     button.disabled = true;
     button.textContent = "Saving…";
     try {
-      await api(`/api/v1/connections/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ name }) });
+      await api(`/api/v1/connections/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ name, ...(accessMode ? { access_mode: accessMode } : {}) }) });
       state.workloads = state.workloads.filter(item => item.connection_id !== id);
       state.workloadCachedConnections.delete(id);
       state.workloadPendingConnections.delete(id);
@@ -5484,6 +5598,110 @@ current-context: runwake-openshift
       toast(error.message, "error");
       button.disabled = false;
       button.textContent = "Save";
+    }
+  }
+
+  function showRestartDockerContainerConfirmation(connectionID, containerID, name) {
+    closeTopologyContextMenu();
+    showModal(`<div class="modal-header">
+        <div><h2 id="restart-container-title" class="modal-title">Restart container?</h2><p class="modal-copy">Docker will stop and start this container.</p></div>
+        <button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="runtime-action-confirmation">
+          <span class="runtime-action-mark" aria-hidden="true">↻</span>
+          <div><strong>${html(name)}</strong><p>Traffic may be interrupted while the container restarts. Its restart policy remains unchanged.</p></div>
+        </div>
+        <div id="docker-action-error" class="notice error remove-error" role="alert" hidden></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" data-action="close-modal" autofocus>Cancel</button>
+        <button class="btn primary" data-action="confirm-restart-docker-container" data-connection="${html(connectionID)}" data-container="${html(containerID)}" data-name="${html(name)}">Restart</button>
+      </div>`, "confirm-modal");
+    modalRoot.querySelector(".modal")?.setAttribute("aria-labelledby", "restart-container-title");
+    modalRoot.querySelector("[autofocus]")?.focus();
+  }
+
+  function showRestartComposeProjectConfirmation(connectionID, project) {
+    closeTopologyContextMenu();
+    const count = state.workloads.filter(item => item.connection_id === connectionID && composeProjectName(item) === project).length;
+    showModal(`<div class="modal-header">
+        <div><h2 id="restart-compose-title" class="modal-title">Restart Compose project?</h2><p class="modal-copy">Docker will restart every container currently in this project.</p></div>
+        <button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="runtime-action-confirmation">
+          <span class="runtime-action-mark" aria-hidden="true">↻</span>
+          <div><strong>${html(project)}</strong><p>${count ? `${count} observed container${count === 1 ? "" : "s"} will be restarted.` : "All matching containers reported by Docker will be restarted."} Service traffic may be interrupted.</p></div>
+        </div>
+        <div id="docker-action-error" class="notice error remove-error" role="alert" hidden></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" data-action="close-modal" autofocus>Cancel</button>
+        <button class="btn primary" data-action="confirm-restart-compose-project" data-connection="${html(connectionID)}" data-project="${html(project)}">Restart project</button>
+      </div>`, "confirm-modal");
+    modalRoot.querySelector(".modal")?.setAttribute("aria-labelledby", "restart-compose-title");
+    modalRoot.querySelector("[autofocus]")?.focus();
+  }
+
+  function showDeleteDockerContainerConfirmation(connectionID, containerID, name) {
+    closeTopologyContextMenu();
+    showModal(`<div class="modal-header">
+        <div><h2 id="delete-container-title" class="modal-title">Delete container?</h2><p class="modal-copy">This force-removes the container and cannot be undone.</p></div>
+        <button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="remove-confirmation">
+          <span class="remove-confirmation-mark" aria-hidden="true">!</span>
+          <div><strong>${html(name)}</strong><p>Docker will stop the container if needed, then remove it. Compose tooling may recreate it later.</p></div>
+        </div>
+        <div id="docker-action-error" class="notice error remove-error" role="alert" hidden></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" data-action="close-modal" autofocus>Cancel</button>
+        <button class="btn destructive" data-action="confirm-delete-docker-container" data-connection="${html(connectionID)}" data-container="${html(containerID)}" data-name="${html(name)}">Delete container</button>
+      </div>`, "confirm-modal");
+    modalRoot.querySelector(".modal")?.setAttribute("aria-labelledby", "delete-container-title");
+    modalRoot.querySelector("[autofocus]")?.focus();
+  }
+
+  async function performDockerRuntimeAction(button, options) {
+    if (!button) return;
+    const errorNotice = document.getElementById("docker-action-error");
+    button.disabled = true;
+    const originalLabel = button.textContent;
+    button.textContent = options.pendingLabel;
+    if (errorNotice) {
+      errorNotice.hidden = true;
+      errorNotice.textContent = "";
+    }
+    try {
+      const response = await api(options.path, options.request);
+      if (options.removeContainerID) {
+        state.workloads = state.workloads.filter(item => item.uid !== options.removeContainerID || item.connection_id !== options.connectionID);
+      }
+      state.workloadCachedConnections.delete(options.connectionID);
+      state.workloadPendingConnections.add(options.connectionID);
+      closeModal();
+      toast(options.successMessage(response));
+      const route = routeInfo();
+      if (route.path === "/workloads") {
+        refreshWorkloads([options.connectionID]);
+      } else if (route.path === "/topology") {
+        await refreshTopology({
+          connection_id: route.params.get("connection_id") || "",
+          project: route.params.get("project") || "",
+          focus: options.removeContainerID ? "" : route.params.get("focus") || "",
+        });
+      }
+    } catch (error) {
+      if (error instanceof AuthenticationRequired) throw error;
+      if (errorNotice) {
+        errorNotice.textContent = error.message;
+        errorNotice.hidden = false;
+      }
+      button.disabled = false;
+      button.textContent = originalLabel;
     }
   }
 
@@ -5628,7 +5846,7 @@ current-context: runwake-openshift
       return;
     }
     const workload = event.target.closest("[data-workload]");
-    if (workload) {
+    if (workload && !event.target.closest("[data-action]")) {
       const request = JSON.parse(decodeURIComponent(workload.dataset.workload));
       navigate(`/activity?${new URLSearchParams(request).toString()}`);
       return;
@@ -5765,6 +5983,43 @@ current-context: runwake-openshift
         case "refresh-topology":
           await refreshTopology({ connection_id: target.dataset.connection || "", project: target.dataset.project || "", focus: target.dataset.focus || "" });
           break;
+        case "restart-docker-container":
+          showRestartDockerContainerConfirmation(target.dataset.connection || "", target.dataset.container || "", target.dataset.name || "Container");
+          break;
+        case "delete-docker-container":
+          showDeleteDockerContainerConfirmation(target.dataset.connection || "", target.dataset.container || "", target.dataset.name || "Container");
+          break;
+        case "restart-compose-project":
+          showRestartComposeProjectConfirmation(target.dataset.connection || "", target.dataset.project || "");
+          break;
+        case "confirm-restart-docker-container":
+          await performDockerRuntimeAction(target, {
+            connectionID: target.dataset.connection || "",
+            path: `/api/v1/connections/${encodeURIComponent(target.dataset.connection || "")}/docker/containers/${encodeURIComponent(target.dataset.container || "")}/restart`,
+            request: { method: "POST" },
+            pendingLabel: "Restarting…",
+            successMessage: () => `${target.dataset.name || "Container"} restarted`,
+          });
+          break;
+        case "confirm-delete-docker-container":
+          await performDockerRuntimeAction(target, {
+            connectionID: target.dataset.connection || "",
+            path: `/api/v1/connections/${encodeURIComponent(target.dataset.connection || "")}/docker/containers/${encodeURIComponent(target.dataset.container || "")}?force=true`,
+            request: { method: "DELETE" },
+            pendingLabel: "Deleting…",
+            removeContainerID: target.dataset.container || "",
+            successMessage: () => `${target.dataset.name || "Container"} deleted`,
+          });
+          break;
+        case "confirm-restart-compose-project":
+          await performDockerRuntimeAction(target, {
+            connectionID: target.dataset.connection || "",
+            path: `/api/v1/connections/${encodeURIComponent(target.dataset.connection || "")}/docker/compose/restart`,
+            request: { method: "POST", body: JSON.stringify({ project: target.dataset.project || "" }) },
+            pendingLabel: "Restarting…",
+            successMessage: response => `${target.dataset.project || "Compose project"} restarted · ${response?.containers || 0} container${response?.containers === 1 ? "" : "s"}`,
+          });
+          break;
         case "toggle-topology-node":
           toggleTopologyNode(target.closest(".topology-node"));
           break;
@@ -5881,6 +6136,9 @@ current-context: runwake-openshift
           }
           break;
         }
+        case "select-fixed-choice":
+          selectFixedChoice(target);
+          break;
         case "select-workload-filter": {
           const field = target.closest(".workload-filter-menu");
           const filter = target.dataset.filter || "";

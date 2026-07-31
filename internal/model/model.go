@@ -10,6 +10,8 @@ const (
 	ConnectionDocker     = "docker"
 	ModeDirect           = "direct"
 	ModeAgent            = "agent"
+	AccessReadOnly       = "read_only"
+	AccessManage         = "manage"
 )
 
 type Settings struct {
@@ -35,12 +37,13 @@ func DefaultSettings() Settings {
 }
 
 type Connection struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Kind      string    `json:"kind"`
-	Mode      string    `json:"mode"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID         string    `json:"id"`
+	Name       string    `json:"name"`
+	Kind       string    `json:"kind"`
+	Mode       string    `json:"mode"`
+	AccessMode string    `json:"access_mode,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 
 	Kubernetes *KubernetesConnection `json:"kubernetes,omitempty"`
 	Docker     *DockerConnection     `json:"docker,omitempty"`
@@ -153,6 +156,9 @@ type ConnectionView struct {
 
 func (c Connection) Redacted() Connection {
 	out := c
+	if out.Kind == ConnectionDocker && out.AccessMode == "" {
+		out.AccessMode = AccessReadOnly
+	}
 	if out.Agent != nil {
 		a := *out.Agent
 		a.TokenHash = ""
@@ -188,6 +194,10 @@ func (c Connection) Redacted() Connection {
 		out.Deployment = &d
 	}
 	return out
+}
+
+func (c Connection) CanManageDocker() bool {
+	return c.Kind == ConnectionDocker && c.Mode == ModeDirect && c.AccessMode == AccessManage
 }
 
 type Workload struct {
