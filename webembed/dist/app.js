@@ -39,6 +39,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     workloadScrollIdleTimer: 0,
     workloadScrollActive: false,
     workloadViewPending: false,
+    workloadPendingMenuFocus: "",
     workloadViewItems: [],
     workloadViewVersion: 0,
     workloadMetricsDeferred: false,
@@ -638,7 +639,8 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     if (state.route?.path !== "/workloads") return;
     const content = document.getElementById("workload-content");
     if (!content) return;
-    if (!resetScroll && state.workloadScrollActive && document.getElementById("workload-table-scroll")) {
+    const viewport = document.getElementById("workload-table-scroll");
+    if (!resetScroll && ((state.workloadScrollActive && viewport) || workloadActionMenuOpen())) {
       state.workloadViewPending = true;
       return;
     }
@@ -648,7 +650,6 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     state.workloadViewVersion += 1;
     const displayMode = workloadDisplayMode(items);
     const shouldShowTable = state.connections.length && state.workloads.length && items.length && displayMode === "list";
-    const viewport = document.getElementById("workload-table-scroll");
     if (!shouldShowTable || !viewport) {
       const overviewScroll = document.getElementById("workload-overview-scroll")?.scrollTop || 0;
       content.innerHTML = workloadContent(items);
@@ -1039,15 +1040,14 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     viewport.dataset.bound = "true";
     viewport.scrollTop = state.workloadWindowScrollTop;
     viewport.addEventListener("scroll", () => {
+      closeConnectionMenus();
       state.workloadWindowScrollTop = viewport.scrollTop;
       state.workloadScrollActive = true;
       if (state.workloadScrollIdleTimer) clearTimeout(state.workloadScrollIdleTimer);
       state.workloadScrollIdleTimer = setTimeout(() => {
         state.workloadScrollIdleTimer = 0;
         state.workloadScrollActive = false;
-        if (!state.workloadViewPending) return;
-        state.workloadViewPending = false;
-        updateWorkloadView();
+        flushPendingWorkloadView();
       }, 140);
       if (state.workloadWindowFrame) return;
       state.workloadWindowFrame = requestAnimationFrame(() => {
@@ -1059,6 +1059,10 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
   }
 
   function updateWorkloadWindow(force = false) {
+    if (workloadActionMenuOpen()) {
+      state.workloadViewPending = true;
+      return;
+    }
     const viewport = document.getElementById("workload-table-scroll");
     const table = viewport?.querySelector(".workload-table");
     const body = table?.tBodies?.[0];
@@ -2043,15 +2047,40 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
   }
 
   function closeConnectionMenus(restoreFocus = false) {
+    let closedWorkloadMenu = false;
     document.querySelectorAll(".connection-action-menu").forEach(field => {
       const menu = field.querySelector(".connection-menu");
       const trigger = field.querySelector(".connection-menu-trigger");
       if (!menu || menu.hidden) return;
+      if (field.classList.contains("workload-action-menu")) {
+        closedWorkloadMenu = true;
+        state.workloadPendingMenuFocus = restoreFocus && state.workloadViewPending ? menu.id : "";
+      }
       menu.hidden = true;
       field.classList.remove("opens-up");
       field.classList.remove("aligns-right");
       trigger?.setAttribute("aria-expanded", "false");
       if (restoreFocus) trigger?.focus();
+    });
+    if (closedWorkloadMenu) flushPendingWorkloadView();
+  }
+
+  function workloadActionMenuOpen() {
+    return Boolean(document.querySelector("#workload-content .workload-action-menu .connection-menu:not([hidden])"));
+  }
+
+  function flushPendingWorkloadView() {
+    if (!state.workloadViewPending) return;
+    queueMicrotask(() => {
+      if (!state.workloadViewPending || state.route?.path !== "/workloads" || state.workloadScrollActive || workloadActionMenuOpen()) return;
+      const focusMenuID = state.workloadPendingMenuFocus;
+      state.workloadPendingMenuFocus = "";
+      state.workloadViewPending = false;
+      updateWorkloadView();
+      if (!focusMenuID) return;
+      const trigger = [...document.querySelectorAll(".workload-action-menu .connection-menu-trigger")]
+        .find(item => item.getAttribute("aria-controls") === focusMenuID);
+      trigger?.focus();
     });
   }
 
