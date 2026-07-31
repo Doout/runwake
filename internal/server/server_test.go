@@ -42,6 +42,12 @@ type fakeProvider struct {
 	projects     []string
 }
 
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (function roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return function(request)
+}
+
 func (p *fakeProvider) Test(context.Context) (model.ProviderInfo, error) { return p.info, nil }
 func (p *fakeProvider) Namespaces(context.Context) ([]string, error) {
 	return append([]string(nil), p.namespaces...), nil
@@ -179,6 +185,33 @@ func newTestServer(t *testing.T, authToken string) (*Server, *store.Store, *stor
 		t.Fatal(err)
 	}
 	return s, state, secrets, p
+}
+
+func TestUpdateCheckUsesLatestGitHubRelease(t *testing.T) {
+	s, _, _, _ := newTestServer(t, "")
+	s.version = "0.1.0"
+	s.httpClient = &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if request.URL.String() != "https://api.github.com/repos/Doout/runwake/releases/latest" {
+			t.Fatalf("unexpected update URL: %s", request.URL)
+		}
+		if request.Header.Get("User-Agent") != "Runwake/0.1.0" {
+			t.Fatalf("unexpected user agent: %s", request.Header.Get("User-Agent"))
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"tag_name":"v0.2.0","html_url":"https://github.com/Doout/runwake/releases/tag/v0.2.0"}`)), Header: make(http.Header)}, nil
+	})}
+
+	recorder := httptest.NewRecorder()
+	s.handleUpdate(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/update", nil))
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d: %s", recorder.Code, recorder.Body.String())
+	}
+	var result map[string]any
+	if err := json.Unmarshal(recorder.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result["current"] != "0.1.0" || result["latest"] != "0.2.0" || result["url"] != "https://github.com/Doout/runwake/releases/tag/v0.2.0" {
+		t.Fatalf("unexpected update response: %#v", result)
+	}
 }
 
 func TestActivityStreamStaysOpenWhenUpstreamEnds(t *testing.T) {

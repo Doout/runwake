@@ -11,6 +11,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
   const app = document.getElementById("app");
   const modalRoot = document.getElementById("modal-root");
   const toastRoot = document.getElementById("toast-root");
+  const personal = window.RunwakePersonal;
 
   const state = {
     meta: null,
@@ -60,6 +61,10 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     metricStream: null,
     logFormatterByWorkload: new Map(),
     logTargetsByWorkload: new Map(),
+    personal: personal?.load() || { sessions: [], views: [], handoffs: [], diagnostics: [], activeSessionId: "" },
+    selectedWorkloads: new Set(),
+    pendingActivityView: null,
+    viewingSessionID: "",
     authenticated: true,
   };
 
@@ -148,6 +153,22 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     setTimeout(() => node.remove(), 4600);
   }
 
+  function savePersonalState(message = "") {
+    if (!personal) return false;
+    const result = personal.save(state.personal);
+    state.personal = result.store;
+    if (!result.ok) {
+      toast(result.error || "Local workflow data could not be saved.", "error");
+      return false;
+    }
+    if (message) toast(message);
+    return true;
+  }
+
+  function activeInvestigation() {
+    return personal?.activeSession(state.personal) || null;
+  }
+
   function routeInfo() {
     const raw = location.hash.replace(/^#/, "") || "/workloads";
     const url = new URL(raw, "http://runwake.local");
@@ -170,10 +191,15 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
         <div class="brand"><img class="brand-mark" src="/icon.svg" alt=""><span>Runwake</span></div>
         <nav class="nav" aria-label="Primary">
           ${navButton("workloads", "▦", "Workloads", active)}
+          ${navButton("investigations", "◎", "Investigations", active)}
           ${navButton("connections", "↔", "Connections", active)}
           ${navButton("settings", "⚙", "Settings", active)}
         </nav>
-        <div class="sidebar-foot">${version}</div>
+        <div class="sidebar-foot">
+          ${activeInvestigation() ? `<button type="button" class="sidebar-session" data-nav="/investigations"><span aria-hidden="true"></span><strong>${html(activeInvestigation().name)}</strong><small>${activeInvestigation().evidence.length} pinned</small></button>` : ""}
+          <button type="button" class="sidebar-command" data-action="open-command-palette"><span>Commands</span><kbd>⌘K</kbd></button>
+          <span>${version}</span>
+        </div>
       </aside>
       <main class="main">${content}</main>`;
   }
@@ -297,6 +323,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     try {
       if (!state.meta) await loadMeta();
       if (route.path === "/connections") return renderConnections();
+      if (route.path === "/investigations") return renderInvestigations();
       if (route.path === "/settings") return renderSettings();
       if (route.path === "/activity") return renderActivity(route.params);
       if (route.path === "/topology") return renderTopology(route.params);
@@ -427,12 +454,14 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
       <section class="page workloads-page" aria-busy="${state.workloadRefreshing}">
         <header class="page-header">
           <div><h1 class="page-title">Workloads</h1></div>
-          <div class="header-actions"><button id="refresh-workloads" class="btn" data-action="refresh-workloads" title="${html(workloadRefreshTitle())}" ${state.workloadRefreshing ? "disabled" : ""}>${html(workloadRefreshLabel())}</button><button class="btn primary" data-action="add-connection">Add connection</button></div>
+          <div class="header-actions">${state.connections.length ? `<button class="btn" data-action="save-workload-view">Save view</button>` : ""}<button id="refresh-workloads" class="btn" data-action="refresh-workloads" title="${html(workloadRefreshTitle())}" ${state.workloadRefreshing ? "disabled" : ""}>${html(workloadRefreshLabel())}</button><button class="btn primary" data-action="add-connection">Add connection</button></div>
         </header>
         <div id="workload-errors">${workloadErrorNotice()}</div>
         <div id="metrics-availability">${metricsAvailability()}</div>
         ${state.connections.length ? `
           <div id="workload-inventory-status">${workloadInventoryStatus()}</div>
+          ${savedWorkloadViews()}
+          <div id="workload-selection-bar">${workloadSelectionBar()}</div>
           <div class="toolbar">
             <div class="search-wrap"><label class="sr-only" for="workload-search">Search workloads</label><input id="workload-search" class="field" type="search" placeholder="Search name, namespace, image…" value="${html(filters.search)}"></div>
             ${renderWorkloadFilterMenu("connection-filter", "connection", "Connection", [{ value: "", label: "All connections" }, ...state.connections.map(connection => ({ value: connection.id, label: connection.name }))], filters.connection, true)}
@@ -443,6 +472,76 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
       </section>`;
     shell(body, "workloads");
     bindWorkloadControls();
+  }
+
+  function savedWorkloadViews() {
+    const views = (state.personal.views || []).filter(item => item.kind === "workloads");
+    if (!views.length) return "";
+    return `<div class="saved-view-strip" aria-label="Saved workload views"><span>Saved views</span><div>${views.map(view => `<button type="button" class="saved-view-button" data-action="apply-saved-view" data-id="${html(view.id)}">${html(view.name)}</button>`).join("")}</div><button type="button" class="btn ghost small" data-action="manage-saved-views">Manage</button></div>`;
+  }
+
+  function workloadSelectionBar() {
+    const selected = state.selectedWorkloads.size;
+    if (!selected) return "";
+    return `<div class="workload-selection-bar" role="status"><span><strong>${selected}</strong> selected</span><div><button type="button" class="btn ghost small" data-action="clear-workload-selection">Clear</button><button type="button" class="btn primary small" data-action="open-selected-logs">Open merged logs</button></div></div>`;
+  }
+
+  function updateWorkloadSelectionBar() {
+    const target = document.getElementById("workload-selection-bar");
+    if (target) target.innerHTML = workloadSelectionBar();
+    document.querySelectorAll("[data-select-workload]").forEach(input => {
+      input.checked = state.selectedWorkloads.has(input.dataset.selectWorkload);
+    });
+  }
+
+  function investigationEvidenceLabel(item) {
+    const payload = item.payload || {};
+    if (item.kind === "metric") return `${payload.name || "Metric"} · ${formatTime(payload.timestamp)}`;
+    const message = String(payload.message || payload.summary || item.kind).replace(/\s+/g, " ").trim();
+    return `${item.kind} · ${message.slice(0, 110)}`;
+  }
+
+  function investigationTimeline(session) {
+    const items = [...(session.evidence || [])].sort((a, b) => new Date(a.payload?.timestamp || a.pinnedAt) - new Date(b.payload?.timestamp || b.pinnedAt));
+    if (!items.length) return `<div class="investigation-empty">Pin a log record, runtime event, or metric sample while inspecting a workload.</div>`;
+    return `<ol class="investigation-timeline">${items.map(item => `<li><time>${html(formatTime(item.payload?.timestamp || item.pinnedAt, true))}</time><span class="evidence-kind">${html(item.kind)}</span><strong>${html(investigationEvidenceLabel(item).replace(/^\w+ · /, ""))}</strong><small>${html(item.payload?.workload || item.payload?.name || item.payload?.source || "")}</small></li>`).join("")}</ol>`;
+  }
+
+  function renderInvestigations() {
+    const sessions = state.personal.sessions || [];
+    const active = activeInvestigation();
+    const viewed = active || sessions.find(item => item.id === state.viewingSessionID && item.readOnly);
+    shell(`<section class="page investigations-page">
+      <header class="page-header"><div><h1 class="page-title">Investigations</h1><p class="page-description">Local evidence only. Nothing on this page is stored by the Runwake server.</p></div><div class="header-actions"><label class="btn file-button">Import<input id="investigation-import" type="file" accept="application/json,.json" hidden></label>${active ? `<button class="btn" data-action="close-investigation" data-id="${html(active.id)}">Finish current</button>` : `<button class="btn primary" data-action="new-investigation">New investigation</button>`}</div></header>
+      ${viewed ? `<section class="investigation-workbench">
+        <div class="investigation-heading"><div><span class="live-signal ${viewed.readOnly ? "readonly" : ""}" aria-hidden="true"></span><input id="investigation-name" class="investigation-name" value="${html(viewed.name)}" aria-label="Investigation name" ${viewed.readOnly ? "readonly" : ""}></div><span>${viewed.readOnly ? "Imported read-only · " : ""}${viewed.evidence.length} pinned · updated ${html(relativeTime(viewed.updatedAt))}</span></div>
+        <div class="investigation-layout"><div>${investigationTimeline(viewed)}</div><aside><label>Notes<textarea id="investigation-notes" class="field" rows="10" placeholder="Record what you observed, not a guessed cause." ${viewed.readOnly ? "readonly" : ""}>${html(viewed.notes)}</textarea></label><div class="investigation-actions"><button class="btn" data-action="export-investigation" data-id="${html(viewed.id)}">Export evidence</button>${viewed.readOnly ? "" : `<button class="btn ghost" data-action="configure-handoffs">Handoffs</button>`}</div></aside></div>
+      </section>` : `<div class="investigation-empty-state"><span aria-hidden="true">◎</span><h2>No active investigation</h2><p>Start one before opening live evidence, or import a bundle created earlier.</p><button class="btn primary" data-action="new-investigation">Start investigation</button></div>`}
+      ${sessions.length ? `<section class="investigation-history"><div class="section-head"><h2 class="section-title">Local history</h2><span class="hint">Latest ${sessions.length} sessions</span></div><div class="investigation-list">${sessions.map(session => `<article><button type="button" data-action="activate-investigation" data-id="${html(session.id)}"><span class="status ${session.status === "active" ? "good" : "other"}">${html(session.status)}</span><strong>${html(session.name)}</strong><small>${session.evidence.length} pinned · ${html(relativeTime(session.updatedAt))}</small></button><div><button class="btn ghost small" data-action="export-investigation" data-id="${html(session.id)}">Export</button><button class="btn ghost small danger" data-action="delete-investigation" data-id="${html(session.id)}">Delete</button></div></article>`).join("")}</div></section>` : ""}
+    </section>`, "investigations");
+    bindInvestigationControls();
+  }
+
+  function bindInvestigationControls() {
+    const active = activeInvestigation();
+    const persist = debounce(() => {
+      if (!active) return;
+      personal.updateSession(state.personal, active.id, { name: document.getElementById("investigation-name")?.value, notes: document.getElementById("investigation-notes")?.value });
+      savePersonalState();
+    }, 220);
+    document.getElementById("investigation-name")?.addEventListener("input", persist);
+    document.getElementById("investigation-notes")?.addEventListener("input", persist);
+    document.getElementById("investigation-import")?.addEventListener("change", async event => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      try {
+        const session = personal.importBundle(state.personal, await file.text());
+        savePersonalState(`${session.name} imported`);
+        renderInvestigations();
+      } catch (error) {
+        toast(`Import failed: ${error.message}`, "error");
+      }
+    });
   }
 
   function renderWorkloadFilterMenu(inputID, filter, label, options, selected, multiple = false) {
@@ -828,7 +927,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
       </div>
       <div id="workload-table-scroll" class="table-wrap workload-table-scroll" tabindex="0" role="region" aria-label="Workload results">
         <table class="data-table workload-table" aria-rowcount="${items.length + 1}">
-          <thead><tr><th>Workload</th><th>Location</th><th>State</th><th>CPU</th><th>Memory</th><th>Actions</th></tr></thead>
+          <thead><tr><th class="workload-select-heading"><span class="sr-only">Select</span></th><th>Workload</th><th>Location</th><th>State</th><th>CPU</th><th>Memory</th><th>Actions</th></tr></thead>
           <tbody>${workloadWindowRows(items, 0, initialEnd)}</tbody>
         </table>
       </div>
@@ -962,6 +1061,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
       name: item.name,
       topology_project: composeProject,
     }));
+    const selectionKey = metricKey(item);
     const locationType = composeProject ? "Compose project" : docker ? "Docker runtime" : "Namespace";
     const locationPrimary = composeProject || (docker ? item.connection : (item.namespace || "Cluster wide"));
     const locationSecondary = composeProject
@@ -974,6 +1074,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
       ? `<button type="button" class="location-primary location-primary-link" data-topology="${topologyRequest}" aria-label="Open ${html(composeProject)} topology">${html(locationPrimary)}</button>`
       : `<div class="location-primary" title="${html(locationPrimary)}">${html(locationPrimary)}</div>`;
     return `<tr class="clickable" tabindex="0" ${rowIndex >= 0 ? `aria-rowindex="${rowIndex + 2}"` : ""} data-workload="${encoded}" data-metric-key="${html(metricKey(item))}">
+      <td class="workload-select-cell"><input type="checkbox" data-select-workload="${html(selectionKey)}" data-request="${encoded}" aria-label="Select ${html(item.name)}" ${state.selectedWorkloads.has(selectionKey) ? "checked" : ""}></td>
       <td><div class="cell-title">${html(item.name)}</div><div class="cell-subtitle">${html(item.kind || item.platform)}</div><div class="workload-mobile-location">${html(locationPrimary)} · ${html(locationSecondary)}</div></td>
       <td>${locationPrimaryHTML}<div class="location-route"><span>${html(locationType)}</span><span aria-hidden="true">·</span><span title="${html(locationSecondary)}">${html(locationSecondary)}</span></div></td>
       <td><span class="status ${statusBucket(item)}">${html(item.state || "Unknown")}</span><div class="cell-subtitle">${html(detail)}</div></td>
@@ -997,7 +1098,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
   }
 
   function workloadSpacerRow(height) {
-    return `<tr class="workload-virtual-spacer" aria-hidden="true"><td colspan="6" style="height:${height}px"></td></tr>`;
+    return `<tr class="workload-virtual-spacer" aria-hidden="true"><td colspan="7" style="height:${height}px"></td></tr>`;
   }
 
   function workloadResultTotal(count) {
@@ -2170,9 +2271,10 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
         </section>
 
         <section class="settings-group">
-          <div class="settings-group-heading">
-            <div><h2>Remote agents</h2></div>
-            <span class="settings-policy-label">Coming soon</span>
+          <div class="settings-group-heading"><div><h2>Application</h2><p>Release checks run only when requested.</p></div></div>
+          <div class="settings-row-list">
+            <div class="settings-row update-row"><span><strong>Runwake v${html(state.meta?.version || "development")}</strong><small id="update-status">Check GitHub Releases for a newer signed build.</small></span><button type="button" class="btn" data-action="check-for-update">Check for update</button></div>
+            <div class="settings-row"><span><strong>Diagnostics</strong><small>Export connection type, stream retry events, version, and status. Credentials and log content are excluded.</small></span><button type="button" class="btn" data-action="export-diagnostics">Export</button></div>
           </div>
         </section>
 
@@ -2215,6 +2317,22 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
       <button class="view-tab ${active === "general" ? "active" : ""}" data-action="settings-tab" data-tab="general">General</button>
       <button class="view-tab ${active === "ssh" ? "active" : ""}" data-action="settings-tab" data-tab="ssh">SSH profiles <span class="tab-count">${state.sshProfiles.length}</span></button>
     </nav>`;
+  }
+
+  async function checkForUpdate(button) {
+    const status = document.getElementById("update-status");
+    if (button) { button.disabled = true; button.textContent = "Checking…"; }
+    try {
+      const result = await api("/api/v1/update");
+      const available = personal.compareVersions(result.latest, result.current) > 0;
+      if (status) status.innerHTML = available
+        ? `Version ${html(result.latest)} is available. <button type="button" class="table-text-action" data-action="open-release" data-url="${html(result.url)}">View release</button>`
+        : `Version ${html(result.current)} is current. Latest release: ${html(result.latest)}.`;
+    } catch (error) {
+      if (status) status.textContent = `Update check failed: ${error.message}`;
+    } finally {
+      if (button) { button.disabled = false; button.textContent = "Check again"; }
+    }
   }
 
   function renderSSHProfileSettings() {
@@ -2381,6 +2499,11 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
   }
 
   function activityMetaHTML(request, connection, workload) {
+    if (request.targets?.length > 1) {
+      const connections = new Set(request.targets.map(item => item.connection_id));
+      const namespaces = new Set(request.targets.map(item => item.namespace).filter(Boolean));
+      return `<span>${request.targets.length} workloads</span><span>${connections.size} connection${connections.size === 1 ? "" : "s"}</span>${namespaces.size ? `<span>${namespaces.size} namespace${namespaces.size === 1 ? "" : "s"}</span>` : ""}<span class="status good">Merged live stream</span>`;
+    }
     const stateText = workload?.state || "State unavailable";
     const ready = workload?.desired ? `${Number(workload.ready || 0)}/${workload.desired} ready` : "";
     const connectionName = connection?.name || request.connection_id;
@@ -2397,26 +2520,48 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     ].join("");
   }
 
+  function activityTargets(params) {
+    const encoded = params.get("targets");
+    if (!encoded) return [];
+    try {
+      const values = JSON.parse(encoded);
+      if (!Array.isArray(values)) return [];
+      return values.slice(0, 12).map(item => ({ connection_id: String(item.connection_id || ""), kind: String(item.kind || ""), namespace: String(item.namespace || ""), name: String(item.name || ""), pod: String(item.pod || ""), container: String(item.container || "") })).filter(item => item.connection_id && item.kind && item.name);
+    } catch {
+      return [];
+    }
+  }
+
+  function activityQuery(request, extra = {}) {
+    if (request?.targets?.length > 1) return new URLSearchParams({ targets: JSON.stringify(request.targets), ...extra });
+    const { targets: ignored, ...single } = request || {};
+    return new URLSearchParams({ ...single, ...extra });
+  }
+
   function renderActivity(params) {
     const renderID = ++state.activityRenderID;
+    const targets = activityTargets(params);
     const request = {
-      connection_id: params.get("connection_id") || "",
-      kind: params.get("kind") || "",
-      namespace: params.get("namespace") || "",
-      name: params.get("name") || "",
+      connection_id: targets[0]?.connection_id || params.get("connection_id") || "",
+      kind: targets[0]?.kind || params.get("kind") || "",
+      namespace: targets[0]?.namespace || params.get("namespace") || "",
+      name: targets[0]?.name || params.get("name") || "",
       pod: params.get("pod") || "",
       container: params.get("container") || "",
       topology_project: params.get("topology_project") || "",
+      targets,
     };
-    const view = params.get("view") === "metrics" ? "metrics" : "activity";
+    const view = targets.length > 1 ? "activity" : params.get("view") === "metrics" ? "metrics" : "activity";
     if (!request.connection_id || !request.kind || !request.name) {
       navigate("/workloads");
       return;
     }
     const workload = state.workloads.find(item => matchesWorkloadRequest(item, request));
     const connection = state.connections.find(item => item.id === request.connection_id);
-    const title = workload?.name || request.name;
-    const scopeEnabled = supportsLogScope(request, connection);
+    const title = targets.length > 1 ? `${targets.length} workloads` : workload?.name || request.name;
+    personal.addRecent(state.personal, { key: `activity:${JSON.stringify(targets)}`, label: title, detail: targets.length > 1 ? "Merged live logs" : `${connection?.name || request.connection_id} · ${request.namespace || request.kind}`, route: location.hash.replace(/^#/, "") });
+    savePersonalState();
+    const scopeEnabled = targets.length < 2 && supportsLogScope(request, connection);
     const targetProfile = logTargetProfile(request, workload);
     const content = view === "metrics" ? `
       <div id="metric-status" class="notice info stream-status">Opening metrics stream…</div>
@@ -2428,7 +2573,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
       </dl>
       <div class="metric-plots">
         <section class="metric-plot"><div class="section-head"><h2 class="section-title">CPU</h2><span id="metric-cpu-unit" class="hint"></span></div><div id="metric-cpu-chart" class="metric-chart"><div class="stream-state">Waiting for samples…</div></div></section>
-        <section class="metric-plot"><div class="section-head"><h2 class="section-title">Memory</h2><span class="hint">Working set</span></div><div id="metric-memory-chart" class="metric-chart"><div class="stream-state">Waiting for samples…</div></div></section>
+        <section class="metric-plot"><div class="section-head"><h2 class="section-title">Memory</h2><span id="metric-memory-unit" class="hint">Working set</span></div><div id="metric-memory-chart" class="metric-chart"><div class="stream-state">Waiting for samples…</div></div></section>
       </div>
       <section class="metric-containers"><div class="section-head"><h2 class="section-title">Containers</h2><span id="metric-source" class="hint"></span></div><div id="metric-container-table" class="table-wrap"><div class="stream-state">Waiting for samples…</div></div></section>` : `
       <section class="log-workbench inspector-collapsed" aria-label="Log workbench">
@@ -2530,7 +2675,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
               <div id="log-results" class="log-results"><div class="log-inspector-empty">Search or apply filters to build a jump list.</div></div>
             </section>
             <section id="log-record-inspector" class="log-record-inspector">
-              <div class="log-inspector-heading"><div><strong>Record</strong><small>Select a line to inspect or reformat.</small></div></div>
+              <div class="log-inspector-heading"><div><strong>Record</strong><small>Select a line to inspect or reformat.</small></div><button class="btn ghost small" data-action="pin-selected-record" disabled>Pin</button></div>
               <div id="log-record-detail" class="log-record-detail"><div class="log-inspector-empty">Select a log line.</div></div>
             </section>
           </aside>
@@ -2539,6 +2684,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     shell(`<section class="page activity-page ${view === "activity" ? "activity-page-live" : ""}">
       <header class="page-header activity-header">
         <div><button class="btn ghost small activity-back" data-action="back-workloads">← Workloads</button><h1 id="activity-title" class="page-title activity-title">${html(title)}</h1><div id="activity-meta" class="activity-meta">${activityMetaHTML(request, connection, workload)}</div></div>
+        <div class="header-actions"><button class="btn" data-action="save-activity-view">Save view</button>${activeInvestigation() ? `<button class="btn" data-nav="/investigations">${html(activeInvestigation().name)} · ${activeInvestigation().evidence.length}</button>` : `<button class="btn" data-action="new-investigation">Start investigation</button>`}${view === "metrics" ? `<button class="btn primary" data-action="pin-latest-metric">Pin latest sample</button>` : ""}</div>
       </header>
       ${workloadViewTabs(request, view, workload)}
       ${content}
@@ -2548,6 +2694,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     } else {
       bindActivityControls(request);
       startActivityStream(request);
+      applyPendingActivityView();
     }
     hydrateActivityContext(request, renderID);
   }
@@ -2570,7 +2717,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     const title = document.getElementById("activity-title");
     const meta = document.getElementById("activity-meta");
     const tabs = document.getElementById("workload-view-tabs");
-    if (title) title.textContent = workload?.name || request.name;
+    if (title) title.textContent = request.targets?.length > 1 ? `${request.targets.length} workloads` : workload?.name || request.name;
     if (meta) meta.innerHTML = activityMetaHTML(request, connection, workload);
     if (tabs) tabs.outerHTML = workloadViewTabs(request, paramsView(), workload);
     updateLogTargetOptions(null, logTargetProfile(request, workload));
@@ -2588,8 +2735,8 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
       : "";
     return `<nav id="workload-view-tabs" class="view-tabs" aria-label="Workload view">
       <button class="view-tab ${view === "activity" ? "active" : ""}" data-action="show-activity-view" data-request="${encodedRequest}">Logs</button>
-      <button class="view-tab ${view === "metrics" ? "active" : ""}" data-action="show-metrics-view" data-request="${encodedRequest}">Metrics</button>
-      ${topologyRequest ? `<button class="view-tab ${view === "topology" ? "active" : ""}" data-action="show-topology-view" data-topology-request="${topologyRequest}">Topology</button>` : ""}
+      ${request.targets?.length > 1 ? "" : `<button class="view-tab ${view === "metrics" ? "active" : ""}" data-action="show-metrics-view" data-request="${encodedRequest}">Metrics</button>`}
+      ${request.targets?.length > 1 ? "" : topologyRequest ? `<button class="view-tab ${view === "topology" ? "active" : ""}" data-action="show-topology-view" data-topology-request="${topologyRequest}">Topology</button>` : ""}
     </nav>`;
   }
 
@@ -2963,18 +3110,22 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     const previous = document.getElementById("stream-previous")?.checked !== false;
     const configuredTail = Math.max(0, Number(document.getElementById("stream-tail")?.value || state.settings?.default_tail_lines || 200));
     const tail = options.liveOnly ? -1 : configuredTail;
-    const query = new URLSearchParams({ ...request, events: String(events), previous: String(previous), tail_lines: String(tail) });
-    const source = new EventSource(`/api/v1/activity/stream?${query.toString()}`);
+    const targets = request.targets?.length > 1 ? request.targets : [{ connection_id: request.connection_id, kind: request.kind, namespace: request.namespace, name: request.name, pod: request.pod, container: request.container }];
     const targetProfile = logTargetProfile(request);
     const retained = retainedRecords.slice(-3000);
     state.stream = {
-      source,
+      source: null,
+      eventSources: new Map(),
+      reconnectTimers: new Map(),
       records: retained,
       seen: new Set(retained.flatMap(activityRecordKeys)),
       sources: new Set(),
       request,
+      targets,
       targetProfile,
       connected: false,
+      arrivalSequence: retained.length,
+      lastSequence: new Map(),
       renderFrame: 0,
       renderedCount: 0,
       matchedCount: 0,
@@ -2994,66 +3145,144 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
       profile: logFormatterProfile(request),
     };
     for (const record of retained) {
-      const origin = [record.source, record.pod, record.container].filter(Boolean).join(" · ");
+      const origin = displayLogOrigin(record);
       if (origin) state.stream.sources.add(origin);
     }
     updateLogSourceOptions();
     updateLogTargetOptions(null, targetProfile);
     if (retained.length) scheduleActivityRender(true);
-    setStreamStatus("Opening live stream…", "info");
+    if (Number.isFinite(options.scrollTop)) requestAnimationFrame(() => {
+      const container = document.getElementById("stream");
+      const follow = document.getElementById("stream-follow");
+      if (container && follow && !options.follow) {
+        follow.checked = false;
+        container.scrollTop = options.scrollTop;
+      }
+    });
+    setStreamStatus(targets.length > 1 ? `Opening ${targets.length} live streams…` : "Opening live stream…", "info");
+    targets.forEach((target, index) => openActivitySource(state.stream, target, index, { events, previous, tail }));
+  }
+
+  function activityTargetKey(target, index) {
+    return `${index}:${target.connection_id}|${target.namespace || ""}|${target.kind}|${target.name}`;
+  }
+
+  function openActivitySource(stream, target, index, options, attempt = 0) {
+    if (state.stream !== stream) return;
+    const key = activityTargetKey(target, index);
+    const query = new URLSearchParams({ ...target, events: String(options.events), previous: String(attempt ? false : options.previous), tail_lines: String(attempt ? -1 : options.tail) });
+    const source = new EventSource(`/api/v1/activity/stream?${query.toString()}`);
+    const status = { source, target, attempt, state: "connecting", ended: false };
+    stream.eventSources.set(key, status);
+    if (!stream.source) stream.source = source;
+    personal.addDiagnostic(state.personal, { type: attempt ? "stream_reconnect" : "stream_open", route: location.hash, connectionID: target.connection_id, source: target.name, attempt });
     source.addEventListener("open", () => {
-      if (!state.stream || state.stream.source !== source) return;
-      state.stream.connected = true;
-      setStreamStatus(state.stream.records.length ? "Live" : "Live · waiting for logs", "info");
+      if (state.stream !== stream || stream.eventSources.get(key)?.source !== source) return;
+      status.state = "connected";
+      status.attempt = 0;
+      stream.connected = [...stream.eventSources.values()].some(item => item.state === "connected");
+      const connected = [...stream.eventSources.values()].filter(item => item.state === "connected").length;
+      setStreamStatus(stream.targets.length > 1 ? `Live · ${connected}/${stream.targets.length} sources` : stream.records.length ? "Live" : "Live · waiting for logs", connected === stream.targets.length ? "info" : "warning");
     });
     source.addEventListener("activity", event => {
-      if (!state.stream || state.stream.source !== source) return;
+      if (state.stream !== stream || stream.eventSources.get(key)?.source !== source) return;
       let record;
       try { record = JSON.parse(event.data); } catch { return; }
-      const key = activityRecordDedupeKey(record);
-      if (state.stream.seen.has(key)) return;
-      record._runwakeKey = key;
-      record._coalescedKeys = [key];
-      record._lineCount = Math.max(1, String(record.message || "").split("\n").length);
-      state.stream.seen.add(key);
-      const coalesced = coalesceActivityRecord(state.stream, record);
-      if (!coalesced) state.stream.records.push(record);
-      if (state.stream.records.length > 3000) {
-        const removed = state.stream.records.splice(0, 500);
-        const removedKeys = new Set();
-        removed.forEach(item => {
-          for (const removedKey of activityRecordKeys(item)) {
-            removedKeys.add(removedKey);
-            state.stream.seen.delete(removedKey);
-          }
-          state.stream.profile.overrides.delete(activityRecordKey(item, 0));
-          state.stream.expandedEntries.delete(activityRecordKey(item, 0));
-        });
-        state.stream.jumpHistory.forEach(anchor => { anchor.indexHint = Math.max(0, anchor.indexHint - removed.length); });
-        if (removedKeys.has(state.stream.selectedKey)) state.stream.selectedKey = "";
-        state.stream.fullRender = true;
+      record.workload = target.name;
+      record.connection_id = target.connection_id;
+      record.namespace = record.namespace || target.namespace || "";
+      record._sourceKey = key;
+      record._arrival = ++stream.arrivalSequence;
+      const sequence = Number(record.sequence);
+      const previousSequence = stream.lastSequence.get(key);
+      if (Number.isFinite(sequence)) {
+        if (Number.isFinite(previousSequence) && sequence > previousSequence + 1) {
+          const missing = sequence - previousSequence - 1;
+          const notice = { timestamp: record.timestamp, type: "system", level: "warning", source: "runwake-stream", workload: target.name, connection_id: target.connection_id, message: `${missing} record${missing === 1 ? "" : "s"} missing from ${target.name} between sequence ${previousSequence} and ${sequence}`, _sourceKey: key, _arrival: ++stream.arrivalSequence };
+          notice._runwakeKey = activityRecordDedupeKey(notice);
+          notice._coalescedKeys = [notice._runwakeKey];
+          notice._lineCount = 1;
+          stream.records.push(notice);
+          stream.seen.add(notice._runwakeKey);
+          personal.addDiagnostic(state.personal, { type: "stream_gap", route: location.hash, connectionID: target.connection_id, source: target.name, message: notice.message });
+        }
+        if (!Number.isFinite(previousSequence) || sequence > previousSequence) stream.lastSequence.set(key, sequence);
       }
-      setStreamStatus(`Live · latest ${formatTime(record.timestamp)}`, "info");
+      const dedupeKey = activityRecordDedupeKey(record);
+      if (stream.seen.has(dedupeKey)) return;
+      record._runwakeKey = dedupeKey;
+      record._coalescedKeys = [dedupeKey];
+      record._lineCount = Math.max(1, String(record.message || "").split("\n").length);
+      stream.seen.add(dedupeKey);
+      const coalesced = stream.targets.length === 1 && coalesceActivityRecord(stream, record);
+      if (!coalesced) stream.records.push(record);
+      if (stream.targets.length > 1) stream.records.sort(compareMergedRecords);
+      trimActivityBuffer(stream);
+      setStreamStatus(stream.targets.length > 1 ? `Live · ${[...stream.eventSources.values()].filter(item => item.state === "connected").length}/${stream.targets.length} sources · latest ${formatTime(record.timestamp)}` : `Live · latest ${formatTime(record.timestamp)}`, "info");
       updateLogSourceOptions(record);
       updateLogTargetOptions(record);
-      scheduleActivityRender(coalesced);
+      scheduleActivityRender(stream.targets.length > 1 || coalesced);
     });
     source.addEventListener("activity-end", () => {
-      if (!state.stream || state.stream.source !== source) return;
-      state.stream.connected = false;
-      setStreamStatus("Stream ended · showing buffered records", "info");
+      if (state.stream !== stream || stream.eventSources.get(key)?.source !== source) return;
+      status.ended = true;
+      status.state = "ended";
+      source.close();
+      const active = [...stream.eventSources.values()].filter(item => item.state === "connected").length;
+      setStreamStatus(active ? `Live · ${active}/${stream.targets.length} sources` : "Stream ended · showing buffered records", active ? "warning" : "info");
     });
-    source.addEventListener("error", () => {
-      if (!state.stream || state.stream.source !== source) return;
-      state.stream.connected = false;
-      setStreamStatus("Stream interrupted. The browser will retry while this page remains open.", "warning");
+    source.addEventListener("error", async () => {
+      if (state.stream !== stream || stream.eventSources.get(key)?.source !== source || status.ended) return;
+      source.close();
+      try {
+        const authResponse = await fetch("/api/v1/meta", { credentials: "same-origin", cache: "no-store" });
+        if (authResponse.status === 401) {
+          status.state = "authentication-required";
+          state.authenticated = false;
+          renderLogin();
+          return;
+        }
+      } catch { /* A network failure still uses bounded retry below. */ }
+      if (state.stream !== stream || status.ended) return;
+      status.state = "reconnecting";
+      status.attempt += 1;
+      stream.connected = [...stream.eventSources.values()].some(item => item.state === "connected");
+      const delay = personal.reconnectDelay(status.attempt);
+      personal.addDiagnostic(state.personal, { type: "stream_error", route: location.hash, connectionID: target.connection_id, source: target.name, attempt: status.attempt, delayMs: delay, message: "Activity stream interrupted" });
+      setStreamStatus(stream.targets.length > 1 ? `${target.name} interrupted · retrying in ${Math.ceil(delay / 1000)}s` : `Stream interrupted · retrying in ${Math.ceil(delay / 1000)}s`, "warning");
+      const timer = setTimeout(() => openActivitySource(stream, target, index, options, status.attempt), delay);
+      stream.reconnectTimers.set(key, timer);
     });
+  }
+
+  function compareMergedRecords(a, b) {
+    const time = new Date(a.timestamp || 0).getTime() - new Date(b.timestamp || 0).getTime();
+    return time || Number(a._arrival || 0) - Number(b._arrival || 0);
+  }
+
+  function trimActivityBuffer(stream) {
+    if (stream.records.length <= 3000) return;
+    const removed = stream.records.splice(0, 500);
+    const removedKeys = new Set();
+    removed.forEach(item => {
+      for (const key of activityRecordKeys(item)) {
+        removedKeys.add(key);
+        stream.seen.delete(key);
+      }
+      stream.profile.overrides.delete(activityRecordKey(item, 0));
+      stream.expandedEntries.delete(activityRecordKey(item, 0));
+    });
+    stream.jumpHistory.forEach(anchor => { anchor.indexHint = Math.max(0, anchor.indexHint - removed.length); });
+    if (removedKeys.has(stream.selectedKey)) stream.selectedKey = "";
+    stream.fullRender = true;
   }
 
   function stopActivityStream() {
     if (state.stream?.renderFrame) cancelAnimationFrame(state.stream.renderFrame);
     if (state.stream?.positionFrame) cancelAnimationFrame(state.stream.positionFrame);
-    if (state.stream?.source) state.stream.source.close();
+    state.stream?.eventSources?.forEach(item => item.source?.close());
+    state.stream?.reconnectTimers?.forEach(timer => clearTimeout(timer));
+    if (state.stream?.source && !state.stream?.eventSources) state.stream.source.close();
     state.stream = null;
   }
 
@@ -3113,19 +3342,26 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     set("metric-memory", formatMemory(latest));
     set("metric-network-rx", latest.network_receive_bytes ? formatBytes(latest.network_receive_bytes) : "—");
     set("metric-pids", latest.pids ? String(latest.pids) : "—");
-    set("metric-source", `${latest.source || "metrics"} · ${formatTime(latest.timestamp)}`);
+    const interval = Math.max(1, Number(state.settings?.selected_metrics_interval_seconds || 2));
+    const ageSeconds = Math.max(0, Math.round((Date.now() - new Date(latest.timestamp).getTime()) / 1000));
+    const stale = ageSeconds > Math.max(8, interval * 3);
+    set("metric-source", `${latest.source || "metrics"} · ${stale ? `${ageSeconds}s old` : "fresh"} · ${interval}s cadence · ${samples.length} samples`);
+    setMetricStatus(stale ? `Metric samples are stale · last update ${ageSeconds}s ago` : "Metrics stream connected", stale ? "warning" : "info", !stale);
     const cpuPercent = latest.cpu_percent !== undefined && latest.cpu_percent !== null;
     set("metric-cpu-unit", cpuPercent ? "Percent of one or more CPUs" : "Millicores");
+    const memoryPercent = latest.memory_limit_bytes ? Math.min(999, Number(latest.memory_bytes || 0) / Number(latest.memory_limit_bytes) * 100) : null;
+    set("metric-memory-unit", memoryPercent === null ? "Working set" : `${memoryPercent.toFixed(memoryPercent >= 10 ? 0 : 1)}% of ${formatBytes(latest.memory_limit_bytes)} limit`);
     const cpuValues = samples.map(item => cpuPercent ? Number(item.cpu_percent || 0) : Number(item.cpu_cores || 0) * 1000);
     const memoryValues = samples.map(item => Number(item.memory_bytes || 0) / (1024 * 1024));
     const cpuChart = document.getElementById("metric-cpu-chart");
     const memoryChart = document.getElementById("metric-memory-chart");
-    if (cpuChart) cpuChart.innerHTML = metricChart(cpuValues, cpuPercent ? "%" : "m");
-    if (memoryChart) memoryChart.innerHTML = metricChart(memoryValues, "MiB");
+    if (cpuChart) cpuChart.innerHTML = metricChart(cpuValues, cpuPercent ? "%" : "m", samples);
+    if (memoryChart) memoryChart.innerHTML = metricChart(memoryValues, "MiB", samples);
+    bindSynchronizedMetricMarkers();
     renderContainerMetrics(latest);
   }
 
-  function metricChart(values, unit) {
+  function metricChart(values, unit, samples = []) {
     const clean = values.filter(Number.isFinite);
     if (!clean.length) return `<div class="stream-state">No samples.</div>`;
     const width = 620, height = 150, padX = 12, padY = 16;
@@ -3139,7 +3375,25 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     }).join(" ");
     const latest = clean[clean.length - 1];
     const number = value => value.toFixed(value >= 100 ? 0 : value >= 10 ? 1 : 2);
-    return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Last ten minutes"><line x1="${padX}" y1="${height - padY}" x2="${width - padX}" y2="${height - padY}" class="chart-axis"></line><polyline points="${points}" class="chart-line"></polyline></svg><div class="chart-caption"><span>10 minutes</span><span>${number(latest)} ${unit} current · ${number(max)} ${unit} max</span></div>`;
+    const markers = clean.map((value, index) => {
+      const x = clean.length === 1 ? width / 2 : padX + index / (clean.length - 1) * (width - padX * 2);
+      const y = height - padY - (value - min) / range * (height - padY * 2);
+      return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3" tabindex="0" data-sample-index="${index}"><title>${number(value)} ${unit} · ${formatTime(samples[index]?.timestamp || "", true)}</title></circle>`;
+    }).join("");
+    const cadence = Math.max(1, Number(state.settings?.selected_metrics_interval_seconds || 2)) * 1000;
+    const gaps = samples.slice(1).filter((sample, index) => new Date(sample.timestamp).getTime() - new Date(samples[index].timestamp).getTime() > cadence * 2.5).length;
+    return `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="Last ten minutes, current ${number(latest)} ${unit}, minimum ${number(min)} ${unit}, maximum ${number(max)} ${unit}"><line x1="${padX}" y1="${height - padY}" x2="${width - padX}" y2="${height - padY}" class="chart-axis"></line><polyline points="${points}" class="chart-line"></polyline><g class="chart-markers">${markers}</g></svg><div class="chart-caption"><span>${clean.length} samples · ${gaps ? `${gaps} sampling gap${gaps === 1 ? "" : "s"}` : "continuous"}</span><span>${number(min)} min · ${number(latest)} current · ${number(max)} max ${unit}</span></div>`;
+  }
+
+  function bindSynchronizedMetricMarkers() {
+    const charts = document.querySelectorAll(".metric-chart");
+    const highlight = index => document.querySelectorAll("[data-sample-index]").forEach(marker => marker.classList.toggle("linked", marker.dataset.sampleIndex === index));
+    charts.forEach(chart => {
+      chart.addEventListener("mouseover", event => { if (event.target.dataset?.sampleIndex) highlight(event.target.dataset.sampleIndex); });
+      chart.addEventListener("focusin", event => { if (event.target.dataset?.sampleIndex) highlight(event.target.dataset.sampleIndex); });
+      chart.addEventListener("mouseout", event => { if (event.target.dataset?.sampleIndex) highlight(""); });
+      chart.addEventListener("focusout", event => { if (event.target.dataset?.sampleIndex) highlight(""); });
+    });
   }
 
   function renderContainerMetrics(metric) {
@@ -3321,7 +3575,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     if (filter.level === "system" && !["system", "event"].includes(classification)) return false;
     if (filter.level === "info" && (classification !== "log" || !/\binfo\b/i.test(`${structured?.level || ""} ${record.level || ""} ${record.type || ""}`))) return false;
     if (filter.level === "debug" && !/\b(debug|trace)\b/i.test(`${structured?.level || ""} ${record.level || ""} ${record.type || ""}`)) return false;
-    const origin = [record.source, record.pod, record.container].filter(Boolean).join(" · ");
+    const origin = displayLogOrigin(record);
     if (filter.source && origin !== filter.source) return false;
     const httpPath = String(enrichedFields.http_path || "");
     const httpMethod = String(enrichedFields.http_method || "").toUpperCase();
@@ -3381,7 +3635,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
   function activityRecordDedupeKey(record) {
     // Sequence numbers identify one upstream stream only. A reconnect may
     // restart that stream and assign new sequences to the same tailed logs.
-    const content = [record.timestamp, record.type, record.level, record.source, record.pod, record.container, record.message];
+    const content = [record.connection_id, record.workload, record.timestamp, record.type, record.level, record.source, record.pod, record.container, record.message];
     return content.some(value => value !== undefined && value !== null && value !== "")
       ? `c:${JSON.stringify(content)}`
       : `s:${record.sequence || ""}`;
@@ -3393,7 +3647,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
 
   function displayLogOrigin(record) {
     const requestName = String(state.stream?.request?.name || "");
-    const parts = [record.source];
+    const parts = state.stream?.targets?.length > 1 ? [record.workload, record.source] : [record.source];
     if (record.pod && record.pod !== requestName) parts.push(record.pod);
     if (record.container && record.container !== requestName && record.container !== record.pod) parts.push(record.container);
     return parts.filter(Boolean).join(" · ");
@@ -3581,7 +3835,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     const stream = state.stream;
     if (!select || !stream) return;
     if (record) {
-      const origin = [record.source, record.pod, record.container].filter(Boolean).join(" · ");
+      const origin = displayLogOrigin(record);
       if (origin) stream.sources.add(origin);
     }
     const current = select.value;
@@ -3590,7 +3844,12 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     if (select.dataset.sources === signature) return;
     select.dataset.sources = signature;
     select.innerHTML = `<option value="">All sources</option>${sources.map(value => `<option value="${html(value)}">${html(value)}</option>`).join("")}`;
-    if (sources.includes(current)) select.value = current;
+    const pending = stream.pendingSourceFilter;
+    if (pending && sources.includes(pending)) {
+      select.value = pending;
+      stream.pendingSourceFilter = "";
+      scheduleActivityRender(true);
+    } else if (sources.includes(current)) select.value = current;
   }
 
   function renderLogResults(force = false) {
@@ -3852,6 +4111,8 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     });
     const selected = document.querySelector(`.stream-row[data-index="${index}"]`);
     selected?.classList.add("selected");
+    const pin = document.querySelector('[data-action="pin-selected-record"]');
+    if (pin) pin.disabled = false;
     if (document.getElementById("log-inspector")?.hidden === false) {
       setLogInspector(true);
     }
@@ -3872,6 +4133,8 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     const key = activityRecordKey(record, index);
     const selectedFormat = stream.profile.overrides.get(key) || "inherit";
     const origin = displayLogOrigin(record);
+    const correlations = personal.correlationIDs(record);
+    const handoffs = availableHandoffs(record);
     const focusActions = record.pod ? `<div class="log-record-focus">
       <span>Focus the live stream</span>
       <button class="log-focus-choice" data-action="focus-log-pod" data-pod="${html(record.pod)}">Only this pod</button>
@@ -3879,6 +4142,8 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     </div>` : "";
     target.innerHTML = `
       <div class="log-record-meta"><span>${html(formatTime(record.timestamp, true))}</span><span>${html(origin || record.type || "record")}</span></div>
+      ${correlations.length ? `<div class="log-correlation"><span>Correlation</span>${correlations.map(item => `<code>${html(item.key)}=${html(item.value)}</code>`).join("")}</div>` : ""}
+      ${handoffs.length ? `<div class="log-handoff-actions"><span>Open in</span>${handoffs.map(item => `<button class="btn ghost small" data-action="open-handoff" data-id="${html(item.id)}" data-index="${index}">${html(item.name)}</button>`).join("")}</div>` : ""}
       ${focusActions}
       <div class="log-record-actions">
         <span>Render this record as</span>
@@ -5564,6 +5829,277 @@ current-context: runwake-openshift
     document.getElementById("docker-agent-environment").textContent = envText;
   }
 
+  function currentInvestigationScope() {
+    const route = routeInfo();
+    if (route.path === "/activity" && state.stream?.request) return { ...state.stream.request, route: location.hash };
+    return { route: location.hash, filters: { ...state.filters }, name: state.filters.search || "Runwake investigation" };
+  }
+
+  function startInvestigation(name, scope = currentInvestigationScope()) {
+    const session = personal.createSession(state.personal, scope, name || scope.name || "Investigation");
+    savePersonalState(`${session.name} started`);
+    return session;
+  }
+
+  function showNewInvestigationModal() {
+    const suggested = state.stream?.request?.name ? `${state.stream.request.name} investigation` : "New investigation";
+    showModal(`<div class="modal-header"><div><h2 class="modal-title">Start investigation</h2><p class="modal-copy">Pinned evidence stays in this browser until you export or delete it.</p></div><button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><label>Name<input id="new-investigation-name" class="field" value="${html(suggested)}" maxlength="160" autofocus></label></div><div class="modal-footer"><button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="confirm-new-investigation">Start</button></div>`);
+  }
+
+  function pinEvidence(kind, payload) {
+    if (!activeInvestigation()) startInvestigation(payload?.workload ? `${payload.workload} investigation` : "Investigation");
+    const evidence = personal.addEvidence(state.personal, kind, payload);
+    savePersonalState(`${kind === "metric" ? "Metric sample" : "Record"} pinned`);
+    return evidence;
+  }
+
+  function pinSelectedRecord() {
+    const selected = selectedLogRecord();
+    if (!selected) return toast("Select a record first.", "error");
+    const record = selected.record;
+    pinEvidence(isRuntimeEventRecord(record) ? "event" : "log", {
+      timestamp: record.timestamp,
+      type: record.type,
+      level: record.level,
+      message: record.message,
+      source: record.source,
+      workload: record.workload || state.stream?.request?.name,
+      pod: record.pod,
+      container: record.container,
+      fields: record.fields,
+    });
+  }
+
+  function pinLatestMetric() {
+    const sample = state.metricStream?.samples?.at(-1);
+    if (!sample) return toast("No metric sample is available yet.", "error");
+    pinEvidence("metric", sample);
+  }
+
+  function exportInvestigation(sessionID) {
+    const session = state.personal.sessions.find(item => item.id === sessionID);
+    if (!session) return toast("Investigation not found.", "error");
+    const preview = personal.exportBundle(session, []);
+    const count = Object.values(preview.counts).reduce((total, value) => total + value, 0);
+    showModal(`<div class="modal-header"><div><h2 class="modal-title">Export evidence</h2><p class="modal-copy">Review the automatic redaction result before saving this bundle.</p></div><button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><div class="redaction-summary"><strong>${count} redaction${count === 1 ? "" : "s"} applied</strong><span>${Object.entries(preview.counts).map(([name, value]) => `${html(name)} ${value}`).join(" · ") || "No credential-shaped values detected"}</span></div><label>Additional redaction patterns<textarea id="export-redaction-patterns" class="field mono" rows="5" placeholder="One regular expression per line"></textarea><span class="hint">Patterns are applied case-insensitively to the exported copy only.</span></label><details class="export-preview"><summary>Preview metadata</summary><pre>${html(JSON.stringify({ name: preview.value.investigation.name, evidence: preview.value.investigation.evidence.length, createdAt: preview.value.investigation.createdAt }, null, 2))}</pre></details></div><div class="modal-footer"><button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="confirm-export-investigation" data-id="${html(session.id)}">Save JSON</button></div>`, "wide");
+  }
+
+  function confirmExportInvestigation(sessionID) {
+    const session = state.personal.sessions.find(item => item.id === sessionID);
+    if (!session) return;
+    const patterns = String(document.getElementById("export-redaction-patterns")?.value || "").split("\n").map(value => value.trim()).filter(Boolean);
+    try {
+      const exported = personal.exportBundle(session, patterns);
+      const filename = `runwake-${session.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "investigation"}.json`;
+      personal.downloadJSON(filename, exported.value);
+      closeModal();
+      toast(`Evidence exported · ${Object.values(exported.counts).reduce((sum, value) => sum + value, 0)} redactions`);
+    } catch (error) {
+      toast(`Export failed: ${error.message}`, "error");
+    }
+  }
+
+  function showSavedViewsModal() {
+    const views = state.personal.views || [];
+    showModal(`<div class="modal-header"><div><h2 class="modal-title">Saved views</h2><p class="modal-copy">Filters and scope only; log content is never included.</p></div><button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><div class="saved-view-list">${views.length ? views.map(view => `<div><span><strong>${html(view.name)}</strong><small>${html(view.kind)} · ${html(relativeTime(view.updatedAt))}</small></span><button class="btn ghost small" data-action="apply-saved-view" data-id="${html(view.id)}">Open</button><button class="btn ghost small" data-action="rename-saved-view" data-id="${html(view.id)}">Rename</button><button class="btn ghost small danger" data-action="delete-saved-view" data-id="${html(view.id)}">Delete</button></div>`).join("") : `<div class="investigation-empty">No saved views yet.</div>`}</div></div>${views.length ? `<div class="modal-footer"><button class="btn danger" data-action="reset-saved-views">Delete all saved views</button></div>` : ""}`);
+  }
+
+  function showSaveWorkloadViewModal() {
+    showModal(`<div class="modal-header"><div><h2 class="modal-title">Save workload view</h2><p class="modal-copy">Stores the current search and filters in this browser.</p></div><button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><label>Name<input id="saved-view-name" class="field" value="${html(state.filters.search || "Workload view")}" maxlength="120" autofocus></label></div><div class="modal-footer"><button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="confirm-save-workload-view">Save</button></div>`);
+  }
+
+  function saveCurrentWorkloadView() {
+    const name = document.getElementById("saved-view-name")?.value.trim();
+    if (!name) return toast("Enter a view name.", "error");
+    personal.saveView(state.personal, "workloads", name, { filters: { search: state.filters.search, connection: filterValues(state.filters.connection), namespace: filterValues(state.filters.namespace), status: state.filters.status }, browseMode: state.workloadBrowseMode });
+    savePersonalState(`${name} saved`);
+    closeModal();
+    if (state.route?.path === "/workloads") drawWorkloads();
+  }
+
+  function showSaveActivityViewModal() {
+    const name = state.stream?.request?.targets?.length > 1 ? `${state.stream.request.targets.length} workload logs` : `${state.stream?.request?.name || "Activity"} logs`;
+    showModal(`<div class="modal-header"><div><h2 class="modal-title">Save activity view</h2><p class="modal-copy">Stores scope, filters, and formatter preferences. Buffered log content is excluded.</p></div><button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><label>Name<input id="saved-view-name" class="field" value="${html(name)}" maxlength="120" autofocus></label></div><div class="modal-footer"><button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="confirm-save-activity-view">Save</button></div>`);
+  }
+
+  function saveCurrentActivityView() {
+    const name = document.getElementById("saved-view-name")?.value.trim();
+    if (!name || !state.stream) return toast("Enter a view name.", "error");
+    const filter = currentLogFilter();
+    const profile = state.stream.profile;
+    personal.saveView(state.personal, "activity", name, { route: location.hash.replace(/^#/, ""), filter: { needle: filter.needle, mode: filter.mode, level: filter.level, source: filter.source, httpPath: filter.httpPath, httpMethod: filter.httpMethod, httpStatus: filter.httpStatus, before: filter.before, after: filter.after }, formatter: { mode: profile.mode, pattern: profile.pattern, template: profile.template } });
+    savePersonalState(`${name} saved`);
+    closeModal();
+  }
+
+  function applyPendingActivityView() {
+    const view = state.pendingActivityView;
+    if (!view || !state.stream) return;
+    state.pendingActivityView = null;
+    const values = { "stream-search": view.state?.filter?.needle, "log-find-mode": view.state?.filter?.mode, "log-level-filter": view.state?.filter?.level, "log-source-filter": view.state?.filter?.source, "log-http-path-filter": view.state?.filter?.httpPath, "log-http-method-filter": view.state?.filter?.httpMethod, "log-http-status-filter": view.state?.filter?.httpStatus, "log-context-before": view.state?.filter?.before, "log-context-after": view.state?.filter?.after };
+    for (const [id, value] of Object.entries(values)) {
+      const input = document.getElementById(id);
+      if (!input || value === undefined) continue;
+      if (input.options && ![...input.options].some(option => option.value === String(value))) {
+        if (id === "log-source-filter") state.stream.pendingSourceFilter = String(value);
+        continue;
+      }
+      input.value = String(value ?? "");
+    }
+    Object.assign(state.stream.profile, view.state?.formatter || {});
+    scheduleActivityRender(true);
+  }
+
+  function applySavedView(viewID) {
+    const view = state.personal.views.find(item => item.id === viewID);
+    if (!view) return toast("Saved view not found.", "error");
+    if (view.kind === "workloads") {
+      state.filters = { search: String(view.state?.filters?.search || ""), connection: filterValues(view.state?.filters?.connection), namespace: filterValues(view.state?.filters?.namespace), status: String(view.state?.filters?.status || "") };
+      state.workloadBrowseMode = view.state?.browseMode || "auto";
+      closeModal();
+      if (state.route?.path === "/workloads") {
+        syncWorkloadFilterControls();
+        updateWorkloadView(true);
+      } else navigate("/workloads");
+    } else if (view.kind === "activity" && view.state?.route) {
+      state.pendingActivityView = view;
+      closeModal();
+      navigate(view.state.route);
+    }
+  }
+
+  function showRenameSavedViewModal(viewID) {
+    const view = state.personal.views.find(item => item.id === viewID);
+    if (!view) return;
+    showModal(`<div class="modal-header"><div><h2 class="modal-title">Rename saved view</h2></div><button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><label>Name<input id="saved-view-name" class="field" value="${html(view.name)}" maxlength="120" autofocus></label></div><div class="modal-footer"><button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="confirm-rename-saved-view" data-id="${html(view.id)}">Rename</button></div>`);
+  }
+
+  function deleteSavedView(viewID) {
+    personal.removeView(state.personal, viewID);
+    savePersonalState("Saved view deleted");
+    showSavedViewsModal();
+  }
+
+  function openSelectedLogs() {
+    const targets = state.workloads.filter(item => state.selectedWorkloads.has(metricKey(item))).slice(0, 12).map(item => ({ connection_id: item.connection_id, kind: item.kind, namespace: item.namespace || "", name: item.name }));
+    if (targets.length < 2) return toast("Select at least two workloads.", "error");
+    navigate(`/activity?${new URLSearchParams({ targets: JSON.stringify(targets) }).toString()}`);
+  }
+
+  function showHandoffModal() {
+    const context = currentHandoffContext();
+    showModal(`<div class="modal-header"><div><h2 class="modal-title">Observability handoffs</h2><p class="modal-copy">Open the current scope in tools that already store and query telemetry.</p></div><button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><div class="handoff-list">${state.personal.handoffs.map(item => `<label><span><strong>${html(item.name)}</strong><small>Use placeholders such as {namespace}, {workload}, {trace_id}, {start}, and {end}.</small></span><input class="field mono" data-handoff-template="${html(item.id)}" value="${html(item.template)}" placeholder="https://example.com/explore?workload={workload}"><output data-handoff-error="${html(item.id)}"></output></label>`).join("")}</div><div class="handoff-context"><strong>Current context</strong><code>${html(JSON.stringify(context))}</code></div></div><div class="modal-footer"><button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="save-handoffs">Save</button></div>`, "wide");
+  }
+
+  function currentHandoffContext(record) {
+    const request = state.stream?.request || state.metricStream?.request || {};
+    const ids = personal.correlationIDs(record || selectedLogRecord()?.record || {});
+    return { connection: request.connection_id || "", namespace: request.namespace || "", workload: record?.workload || request.name || "", kind: request.kind || "", pod: record?.pod || request.pod || "", container: record?.container || request.container || "", trace_id: ids[0]?.value || "", start: activeInvestigation()?.createdAt || "", end: new Date().toISOString() };
+  }
+
+  function availableHandoffs(record) {
+    const context = currentHandoffContext(record);
+    return (state.personal.handoffs || []).filter(item => item.enabled && item.template).map(item => {
+      try { return { ...item, url: personal.resolveHandoff(item.template, context) }; }
+      catch { return null; }
+    }).filter(Boolean);
+  }
+
+  function previewHandoff(handoffID, recordIndex) {
+    const record = Number.isFinite(recordIndex) ? state.stream?.records?.[recordIndex] : selectedLogRecord()?.record;
+    const item = availableHandoffs(record).find(candidate => candidate.id === handoffID);
+    if (!item) return toast("That handoff is not configured for this context.", "error");
+    showModal(`<div class="modal-header"><div><h2 class="modal-title">Open ${html(item.name)}</h2><p class="modal-copy">Review the generated destination before leaving Runwake.</p></div><button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><div class="handoff-preview"><span>Destination</span><code>${html(item.url)}</code></div></div><div class="modal-footer"><button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="confirm-open-handoff" data-url="${html(item.url)}">Open in new tab</button></div>`);
+  }
+
+  function openHandoff(url) {
+    let destination;
+    try { destination = new URL(url); } catch { return toast("The handoff URL is invalid.", "error"); }
+    if (!/^https?:$/.test(destination.protocol)) return toast("Only HTTP and HTTPS handoffs can be opened.", "error");
+    window.open(destination.href, "_blank", "noopener,noreferrer");
+    closeModal();
+  }
+
+  function saveHandoffs() {
+    let invalid = false;
+    document.querySelectorAll("[data-handoff-template]").forEach(input => {
+      const item = state.personal.handoffs.find(candidate => candidate.id === input.dataset.handoffTemplate);
+      if (!item) return;
+      const validation = input.value ? personal.validateHandoff(input.value) : { ok: true };
+      const output = document.querySelector(`[data-handoff-error="${input.dataset.handoffTemplate}"]`);
+      if (output) output.textContent = validation.ok ? "" : validation.error;
+      input.setAttribute("aria-invalid", String(!validation.ok));
+      if (!validation.ok) invalid = true;
+      else {
+        item.template = input.value.trim();
+        item.enabled = Boolean(item.template);
+      }
+    });
+    if (invalid) return;
+    savePersonalState("Handoffs saved");
+    closeModal();
+  }
+
+  function personalCommands() {
+    const base = [
+      { id: "workloads", label: "Open workloads", detail: "Navigation", run: () => navigate("/workloads") },
+      { id: "investigations", label: "Open investigations", detail: "Navigation", run: () => navigate("/investigations") },
+      { id: "connections", label: "Open connections", detail: "Navigation", run: () => navigate("/connections") },
+      { id: "settings", label: "Open settings", detail: "Navigation", run: () => navigate("/settings") },
+      { id: "new-investigation", label: "Start investigation", detail: "Local workflow", run: showNewInvestigationModal },
+      { id: "handoffs", label: "Configure observability handoffs", detail: "Local workflow", run: showHandoffModal },
+      { id: "diagnostics", label: "Export redacted diagnostics", detail: "Reliability", run: exportDiagnostics },
+    ];
+    const views = (state.personal.views || []).map(view => ({ id: `view:${view.id}`, label: `Open ${view.name}`, detail: `Saved ${view.kind} view`, run: () => applySavedView(view.id) }));
+    const recents = (state.personal.recents || []).map(item => ({ id: `recent:${item.key}`, label: `Recent: ${item.label}`, detail: item.detail || "Recent target", run: () => navigate(item.route) }));
+    const workloads = state.workloads.slice(0, 200).map(item => ({ id: `workload:${metricKey(item)}`, label: item.name, detail: `${item.connection} · ${item.namespace || item.kind}`, run: () => navigate(`/activity?${new URLSearchParams({ connection_id: item.connection_id, kind: item.kind, namespace: item.namespace || "", name: item.name }).toString()}`) }));
+    return [...base, ...views, ...recents, ...workloads];
+  }
+
+  function showCommandPalette() {
+    const commands = personalCommands();
+    showModal(`<div class="command-palette"><label class="sr-only" for="command-search">Find a command or workload</label><input id="command-search" class="command-search" type="search" placeholder="Open a workload or run a command…" autocomplete="off" autofocus><div id="command-results" class="command-results">${commandMarkup(commands)}</div><footer><span><kbd>↑↓</kbd> move</span><span><kbd>Enter</kbd> open</span><span><kbd>Esc</kbd> close</span></footer></div>`, "command-palette-modal");
+    const input = document.getElementById("command-search");
+    const render = () => {
+      const words = input.value.toLowerCase().split(/\s+/).filter(Boolean);
+      const filtered = commands.filter(command => words.every(word => `${command.label} ${command.detail}`.toLowerCase().includes(word))).slice(0, 40);
+      document.getElementById("command-results").innerHTML = commandMarkup(filtered);
+      document.querySelector("[data-command-id]")?.classList.add("active");
+    };
+    input?.addEventListener("input", render);
+    input?.addEventListener("keydown", event => {
+      const items = [...document.querySelectorAll("[data-command-id]")];
+      const current = Math.max(0, items.findIndex(item => item.classList.contains("active")));
+      if (["ArrowDown", "ArrowUp"].includes(event.key)) {
+        event.preventDefault();
+        items[current]?.classList.remove("active");
+        items[(current + (event.key === "ArrowDown" ? 1 : -1) + items.length) % items.length]?.classList.add("active");
+      } else if (event.key === "Enter") {
+        event.preventDefault();
+        document.querySelector("[data-command-id].active")?.click();
+      }
+    });
+  }
+
+  function commandMarkup(commands) {
+    return commands.length ? commands.map(command => `<button type="button" data-action="execute-command" data-command-id="${html(command.id)}"><strong>${html(command.label)}</strong><small>${html(command.detail)}</small></button>`).join("") : `<div class="command-empty">No matching command or workload.</div>`;
+  }
+
+  function executeCommand(commandID) {
+    const command = personalCommands().find(item => item.id === commandID);
+    if (!command) return;
+    closeModal();
+    command.run();
+  }
+
+  function exportDiagnostics() {
+    personal.addDiagnostic(state.personal, { type: "diagnostics_export", route: location.hash, version: state.meta?.version || "", online: navigator.onLine });
+    const connection = state.connections.find(item => item.id === (state.stream?.request?.connection_id || state.metricStream?.request?.connection_id));
+    const bundle = personal.diagnosticsBundle(state.personal, { route: location.hash, version: state.meta?.version || "", connectionKind: connection?.kind || "", connectionID: connection?.id || "", online: navigator.onLine });
+    personal.downloadJSON(`runwake-diagnostics-${new Date().toISOString().slice(0, 10)}.json`, bundle);
+    savePersonalState("Diagnostics exported");
+  }
+
   function showModal(content, className = "") {
     modalRoot.innerHTML = `<div class="modal-backdrop" data-action="backdrop"><section class="modal ${className}" role="dialog" aria-modal="true">${content}</section></div>`;
   }
@@ -5875,7 +6411,7 @@ current-context: runwake-openshift
       return;
     }
     const workload = event.target.closest("[data-workload]");
-    if (workload && !event.target.closest("[data-action]")) {
+    if (workload && !event.target.closest("[data-action], input, button, a, select, textarea")) {
       const request = JSON.parse(decodeURIComponent(workload.dataset.workload));
       navigate(`/activity?${new URLSearchParams(request).toString()}`);
       return;
@@ -5963,6 +6499,92 @@ current-context: runwake-openshift
         case "submit-connection": await submitConnection(); break;
         case "close-modal": closeModal(); break;
         case "backdrop": if (event.target === target) closeModal(); break;
+        case "open-command-palette": showCommandPalette(); break;
+        case "execute-command": executeCommand(target.dataset.commandId || ""); break;
+        case "new-investigation": showNewInvestigationModal(); break;
+        case "confirm-new-investigation": {
+          const name = document.getElementById("new-investigation-name")?.value.trim();
+          if (!name) return toast("Enter an investigation name.", "error");
+          startInvestigation(name);
+          closeModal();
+          if (state.route?.path === "/investigations") renderInvestigations();
+          break;
+        }
+        case "activate-investigation":
+          {
+            const selected = state.personal.sessions.find(item => item.id === target.dataset.id);
+            if (selected?.readOnly) {
+              state.viewingSessionID = selected.id;
+              renderInvestigations();
+              break;
+            }
+          }
+          state.personal.sessions.forEach(session => {
+            if (session.status === "active" && session.id !== target.dataset.id) personal.closeSession(state.personal, session.id);
+          });
+          {
+            const session = state.personal.sessions.find(item => item.id === target.dataset.id);
+            if (session) {
+              session.status = "active";
+              session.closedAt = "";
+              session.updatedAt = new Date().toISOString();
+            }
+          }
+          state.personal.activeSessionId = target.dataset.id || "";
+          savePersonalState("Investigation activated");
+          renderInvestigations();
+          break;
+        case "close-investigation":
+          personal.closeSession(state.personal, target.dataset.id || "");
+          savePersonalState("Investigation finished");
+          renderInvestigations();
+          break;
+        case "delete-investigation":
+          personal.removeSession(state.personal, target.dataset.id || "");
+          savePersonalState("Investigation deleted");
+          renderInvestigations();
+          break;
+        case "export-investigation": exportInvestigation(target.dataset.id || ""); break;
+        case "confirm-export-investigation": confirmExportInvestigation(target.dataset.id || ""); break;
+        case "pin-selected-record": pinSelectedRecord(); break;
+        case "pin-latest-metric": pinLatestMetric(); break;
+        case "configure-handoffs": showHandoffModal(); break;
+        case "save-handoffs": saveHandoffs(); break;
+        case "export-diagnostics": exportDiagnostics(); break;
+        case "check-for-update": await checkForUpdate(target); break;
+        case "open-release": {
+          const release = new URL(target.dataset.url || "", "https://github.com");
+          if (release.protocol === "https:" && release.hostname === "github.com") window.open(release.href, "_blank", "noopener,noreferrer");
+          break;
+        }
+        case "open-handoff": previewHandoff(target.dataset.id || "", Number(target.dataset.index)); break;
+        case "confirm-open-handoff": openHandoff(target.dataset.url || ""); break;
+        case "save-workload-view": showSaveWorkloadViewModal(); break;
+        case "confirm-save-workload-view": saveCurrentWorkloadView(); break;
+        case "save-activity-view": showSaveActivityViewModal(); break;
+        case "confirm-save-activity-view": saveCurrentActivityView(); break;
+        case "apply-saved-view": applySavedView(target.dataset.id || ""); break;
+        case "rename-saved-view": showRenameSavedViewModal(target.dataset.id || ""); break;
+        case "confirm-rename-saved-view": {
+          const name = document.getElementById("saved-view-name")?.value.trim();
+          if (!name) return toast("Enter a view name.", "error");
+          personal.renameView(state.personal, target.dataset.id || "", name);
+          savePersonalState("Saved view renamed");
+          showSavedViewsModal();
+          break;
+        }
+        case "delete-saved-view": deleteSavedView(target.dataset.id || ""); break;
+        case "reset-saved-views":
+          state.personal.views = [];
+          savePersonalState("Saved views cleared");
+          showSavedViewsModal();
+          break;
+        case "manage-saved-views": showSavedViewsModal(); break;
+        case "clear-workload-selection":
+          state.selectedWorkloads.clear();
+          updateWorkloadSelectionBar();
+          break;
+        case "open-selected-logs": openSelectedLogs(); break;
         case "refresh-workloads":
           refreshWorkloads(state.filters.connection);
           break;
@@ -6108,12 +6730,12 @@ current-context: runwake-openshift
           break;
         case "show-activity-view": {
           const request = JSON.parse(decodeURIComponent(target.dataset.request));
-          navigate(`/activity?${new URLSearchParams(request).toString()}`);
+          navigate(`/activity?${activityQuery(request).toString()}`);
           break;
         }
         case "show-metrics-view": {
           const request = JSON.parse(decodeURIComponent(target.dataset.request));
-          const query = new URLSearchParams({ ...request, view: "metrics" });
+          const query = activityQuery(request, { view: "metrics" });
           navigate(`/activity?${query.toString()}`);
           break;
         }
@@ -6122,7 +6744,10 @@ current-context: runwake-openshift
           navigate(`/topology?${new URLSearchParams(request).toString()}`);
           break;
         }
-        case "reconnect-stream": if (state.stream) startActivityStream(state.stream.request); break;
+        case "reconnect-stream": if (state.stream) {
+          const container = document.getElementById("stream");
+          startActivityStream(state.stream.request, state.stream.records, { liveOnly: true, scrollTop: container?.scrollTop, follow: document.getElementById("stream-follow")?.checked });
+        } break;
         case "clear-stream": if (state.stream) {
           state.stream.records = [];
           state.stream.seen.clear();
@@ -6292,6 +6917,20 @@ current-context: runwake-openshift
     }
   });
 
+  document.addEventListener("change", event => {
+    const selection = event.target.closest?.("[data-select-workload]");
+    if (!selection) return;
+    if (selection.checked) {
+      if (state.selectedWorkloads.size >= 12) {
+        selection.checked = false;
+        toast("Merged logs support up to 12 workloads at once.", "error");
+        return;
+      }
+      state.selectedWorkloads.add(selection.dataset.selectWorkload);
+    } else state.selectedWorkloads.delete(selection.dataset.selectWorkload);
+    updateWorkloadSelectionBar();
+  });
+
   document.addEventListener("dblclick", event => {
     const node = event.target.closest?.("[data-topology-node]");
     if (!node || event.target.closest("button, a, input, select, textarea")) return;
@@ -6313,6 +6952,11 @@ current-context: runwake-openshift
   window.addEventListener("resize", () => closeTopologyContextMenu());
 
   document.addEventListener("keydown", event => {
+    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+      event.preventDefault();
+      showCommandPalette();
+      return;
+    }
     const topologyMenu = event.target.closest?.(".topology-context-menu");
     if (topologyMenu) {
       const items = [...topologyMenu.querySelectorAll('[role="menuitem"]')];
