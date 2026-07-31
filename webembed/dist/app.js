@@ -12,6 +12,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
   const modalRoot = document.getElementById("modal-root");
   const toastRoot = document.getElementById("toast-root");
   const personal = window.RunwakePersonal;
+  const navigation = window.RunwakeNavigation;
 
   const state = {
     meta: null,
@@ -170,9 +171,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
   }
 
   function routeInfo() {
-    const raw = location.hash.replace(/^#/, "") || "/workloads";
-    const url = new URL(raw, "http://runwake.local");
-    return { path: url.pathname, params: url.searchParams };
+    return navigation.parseRoute(location.hash);
   }
 
   function navigate(path) {
@@ -362,7 +361,6 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
       }
     });
   }
-
   async function renderWorkloads() {
     const renderID = ++state.workloadRenderID;
     stopWorkloadStream();
@@ -2521,21 +2519,11 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
   }
 
   function activityTargets(params) {
-    const encoded = params.get("targets");
-    if (!encoded) return [];
-    try {
-      const values = JSON.parse(encoded);
-      if (!Array.isArray(values)) return [];
-      return values.slice(0, 12).map(item => ({ connection_id: String(item.connection_id || ""), kind: String(item.kind || ""), namespace: String(item.namespace || ""), name: String(item.name || ""), pod: String(item.pod || ""), container: String(item.container || "") })).filter(item => item.connection_id && item.kind && item.name);
-    } catch {
-      return [];
-    }
+    return navigation.activityTargets(params);
   }
 
   function activityQuery(request, extra = {}) {
-    if (request?.targets?.length > 1) return new URLSearchParams({ targets: JSON.stringify(request.targets), ...extra });
-    const { targets: ignored, ...single } = request || {};
-    return new URLSearchParams({ ...single, ...extra });
+    return navigation.activityQuery(request, extra);
   }
 
   function renderActivity(params) {
@@ -4533,7 +4521,6 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     return String(record?.type || "").toLowerCase() === "event"
       || /(?:^|-)event$/.test(String(record?.source || "").toLowerCase());
   }
-
   function showAddConnection(kind = "kubernetes") {
     if (kind === "agent" && !remoteAgentsAvailable()) {
       toast("Remote agents are coming soon");

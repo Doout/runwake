@@ -1,4 +1,4 @@
-.PHONY: build test race run fix fmt format-check vet lint-install lint vuln-install vuln check upgrade-check release cross-build docker desktop desktop-install desktop-build desktop-dev smoke clean
+.PHONY: build test race run fix fmt format-check vet lint-install lint vuln-install vuln check web-build web-check upgrade-check release cross-build docker desktop desktop-install desktop-build desktop-dev smoke clean
 
 VERSION ?= 0.1.0
 WAILS_VERSION ?= v2.13.0
@@ -62,11 +62,20 @@ vuln: vuln-install
 	cd desktop-wails && "$(GOVULNCHECK_BIN)" ./...
 
 check: format-check test vet lint
+	$(MAKE) web-check
 	node --check webembed/dist/app.js
 	node --check webembed/dist/personal.js
 	node webembed/personal_test.js
+	node --check webembed/dist/navigation.js
+	node webembed/navigation_test.js
 	node --check webembed/dist/terminal-text.js
 	node webembed/terminal_text_test.js
+
+web-build:
+	./scripts/build-web.sh
+
+web-check:
+	./scripts/build-web.sh --check
 
 upgrade-check:
 	./scripts/check-upgrade.sh
