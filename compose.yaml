@@ -6,6 +6,7 @@ services:
       args:
         VERSION: ${RUNWAKE_VERSION:-0.1.0}
     image: runwake:${RUNWAKE_VERSION:-0.1.0}
+    user: "0"
     ports:
       - "${RUNWAKE_PORT:-8080}:8080"
     environment:
@@ -14,7 +15,7 @@ services:
       RUNWAKE_LOG_LEVEL: ${RUNWAKE_LOG_LEVEL:-info}
     volumes:
       - runwake-data:/data
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ${RUNWAKE_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock:ro
     restart: unless-stopped
     read_only: true
     tmpfs:

@@ -39,14 +39,22 @@ Or start the latest container image:
 ```sh
 docker run --detach \
   --name runwake \
+  --user 0 \
   --publish 127.0.0.1:8080:8080 \
   --volume runwake-data:/data \
-  --volume /var/run/docker.sock:/var/run/docker.sock:ro \
+  --volume "${RUNWAKE_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock:ro" \
   ghcr.io/doout/runwake:latest
 ```
 
 Then open [http://localhost:8080](http://localhost:8080), add a Docker
 connection, and keep the default `unix:///var/run/docker.sock` endpoint.
+
+Rootless Docker uses a per-user socket. Set its path before running either
+command:
+
+```sh
+export RUNWAKE_DOCKER_SOCKET="/run/user/$(id -u)/docker.sock"
+```
 
 To build and run the current source with Docker Compose instead:
 
@@ -56,8 +64,10 @@ docker compose up --build --detach
 
 Both container commands persist configuration in a named Docker volume. For a
 shared deployment, pass `RUNWAKE_AUTH_TOKEN` into the container and put Runwake
-behind HTTPS. The Docker socket is a privileged host capability even with a
-read-only bind mount; only expose it to images you trust.
+behind HTTPS. These commands run the container as root so it can access the
+selected Docker socket without a host-specific group ID. The socket is a
+privileged host capability even with a read-only bind mount; only expose it to
+images you trust.
 
 ### Opening the macOS app
 
