@@ -40,6 +40,7 @@ SSH Kubernetes command policy.
 ### `GET /api/v1/connections`
 ### `GET /api/v1/connections/{id}`
 ### `POST /api/v1/connections`
+### `PATCH /api/v1/connections/{id}`
 ### `POST /api/v1/connections/test`
 ### `POST /api/v1/ssh/test`
 ### `GET /api/v1/ssh-profiles`
@@ -48,6 +49,21 @@ SSH Kubernetes command policy.
 ### `DELETE /api/v1/ssh-profiles/{id}`
 ### `POST /api/v1/connections/{id}/test`
 ### `DELETE /api/v1/connections/{id}`
+
+Direct Docker connection requests accept an access mode:
+
+```json
+{
+  "name": "Local Docker",
+  "kind": "docker",
+  "access_mode": "read_only",
+  "docker": {"endpoint": "unix:///var/run/docker.sock"}
+}
+```
+
+`read_only` is the default when the field is omitted. `manage` enables the
+runtime-action endpoints below. `PATCH /api/v1/connections/{id}` can update
+`name` and `access_mode` for a direct Docker connection.
 
 Connection requests may select a reusable `ssh_profile_id` or include an `ssh` object with host, port, user, host-key policy, optional jump host, optional known-hosts path, and an optional private key. Private keys are encrypted at rest and their secret identifiers are redacted from responses. SSH uses non-interactive OpenSSH authentication through the supplied key, SSH agent, SSH config, or default keys.
 
@@ -63,6 +79,33 @@ Direct Kubernetes and Docker requests may also include an `http_proxy` object:
 ```
 
 Proxy URLs are encrypted and responses expose only a credential-free display URL. SSH and HTTP proxy settings are independent: when both are selected, the proxy must be reachable from the SSH host.
+
+## Docker runtime actions
+
+These routes require a direct Docker connection whose saved `access_mode` is
+`manage`. A read-only connection returns `403`.
+
+### `POST /api/v1/connections/{id}/docker/containers/{container_id}/restart`
+
+Restarts one container. The optional `timeout_seconds` query parameter accepts
+`0` through `300` and defaults to `10`.
+
+### `DELETE /api/v1/connections/{id}/docker/containers/{container_id}`
+
+Deletes one container. The optional `force=true` query stops a running
+container before removing it. Runwake's UI uses force-delete after a protected
+confirmation.
+
+### `POST /api/v1/connections/{id}/docker/compose/restart`
+
+```json
+{"project":"payments","timeout_seconds":10}
+```
+
+Restarts every container whose `com.docker.compose.project` label exactly
+matches `project`. The response reports the number of restarted containers.
+Successful runtime actions invalidate that connection's in-memory workload and
+metric snapshots.
 
 ## Workloads
 

@@ -223,6 +223,34 @@ func (c *Client) getJSON(ctx context.Context, versioned bool, resource string, q
 	return json.NewDecoder(resp.Body).Decode(target)
 }
 
+func (c *Client) change(ctx context.Context, method, resource string, query url.Values) error {
+	u := *c.baseURL
+	u.Path = path.Join(u.Path, c.apiPath(resource))
+	u.RawQuery = query.Encode()
+	req, err := http.NewRequestWithContext(ctx, method, u.String(), nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("User-Agent", "runwake/0.1")
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	data, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return nil
+	}
+	var payload struct {
+		Message string `json:"message"`
+	}
+	_ = json.Unmarshal(data, &payload)
+	if payload.Message == "" {
+		payload.Message = strings.TrimSpace(string(data))
+	}
+	return fmt.Errorf("docker API %s %s returned %s: %s", method, resource, resp.Status, payload.Message)
+}
+
 type Version struct {
 	Version       string `json:"Version"`
 	APIVersion    string `json:"ApiVersion"`
@@ -374,6 +402,75 @@ func (c *Client) Inspect(ctx context.Context, id string) (ContainerInspect, erro
 		return ContainerInspect{}, err
 	}
 	return inspect, nil
+}
+
+func (c *Client) RestartContainer(ctx context.Context, id string, timeoutSeconds int) error {
+	if _, err := c.Negotiate(ctx); err != nil {
+		return err
+	}
+	query := url.Values{"t": {strconv.Itoa(timeoutSeconds)}}
+	return c.change(ctx, http.MethodPost, "/containers/"+url.PathEscape(id)+"/restart", query)
+}
+
+func (c *Client) DeleteContainer(ctx context.Context, id string, force bool) error {
+	if _, err := c.Negotiate(ctx); err != nil {
+		return err
+	}
+	query := url.Values{"force": {strconv.FormatBool(force)}, "v": {"1"}}
+	return c.change(ctx, http.MethodDelete, "/containers/"+url.PathEscape(id), query)
+}
+
+func (c *Client) RestartComposeProject(ctx context.Context, project string, timeoutSeconds int) (int, error) {
+	containers, err := c.ListContainers(ctx)
+	if err != nil {
+		return 0, err
+	}
+	ids := make([]string, 0)
+	for _, container := range containers {
+		if container.Labels["com.docker.compose.project"] == project {
+			ids = append(ids, container.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return 0, fmt.Errorf("compose project %q has no containers", project)
+	}
+
+	type result struct {
+		err error
+	}
+	results := make(chan result, len(ids))
+	sem := make(chan struct{}, 4)
+	var wg sync.WaitGroup
+	for _, id := range ids {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			select {
+			case sem <- struct{}{}:
+			case <-ctx.Done():
+				results <- result{err: ctx.Err()}
+				return
+			}
+			defer func() { <-sem }()
+			results <- result{err: c.RestartContainer(ctx, id, timeoutSeconds)}
+		}()
+	}
+	wg.Wait()
+	close(results)
+
+	restarted := 0
+	var restartErrors []error
+	for result := range results {
+		if result.err != nil {
+			restartErrors = append(restartErrors, result.err)
+			continue
+		}
+		restarted++
+	}
+	if len(restartErrors) > 0 {
+		return restarted, fmt.Errorf("restarted %d of %d compose containers: %w", restarted, len(ids), errors.Join(restartErrors...))
+	}
+	return restarted, nil
 }
 
 func (c *Client) ListWorkloads(ctx context.Context, connectionID, connectionName string) ([]model.Workload, error) {

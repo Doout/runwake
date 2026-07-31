@@ -99,6 +99,9 @@ func (s *Server) Handler() http.Handler {
 	api.HandleFunc("PATCH /api/v1/connections/{id}", s.handleConnectionUpdate)
 	api.HandleFunc("POST /api/v1/connections/{id}/test", s.handleConnectionTest)
 	api.HandleFunc("DELETE /api/v1/connections/{id}", s.handleConnectionDelete)
+	api.HandleFunc("POST /api/v1/connections/{id}/docker/containers/{container_id}/restart", s.handleDockerContainerRestart)
+	api.HandleFunc("DELETE /api/v1/connections/{id}/docker/containers/{container_id}", s.handleDockerContainerDelete)
+	api.HandleFunc("POST /api/v1/connections/{id}/docker/compose/restart", s.handleDockerComposeRestart)
 	if s.remoteAgentsEnabled {
 		api.HandleFunc("POST /api/v1/agents/enroll", s.handleAgentEnroll)
 		api.HandleFunc("POST /api/v1/connections/{id}/agent", s.handleAgentDeploy)

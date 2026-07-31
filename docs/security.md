@@ -25,7 +25,9 @@ Kubeconfig exec plugins execute local programs. Runwake inspects the selected us
 
 ## Docker permissions
 
-A Docker socket is a privileged host capability. Read-only intent in the application does not make possession of the socket harmless. Do not expose an unauthenticated Docker TCP endpoint. Prefer TLS, SSH, or a narrowly scoped socket proxy.
+A Docker socket is a privileged host capability. Runwake defaults Docker connections to `read_only`; the `manage` mode enables container restart, force-delete, and Compose-project restart in both the UI and server API. This is an application-level authorization gate and does not make possession of the socket harmless or reduce the Engine API's privileges.
+
+Anyone who can authenticate to a Runwake server can use actions on its `manage` connections because the current release has one administrative access token and no per-user RBAC. Keep shared deployments behind HTTPS, protect the token, do not expose an unauthenticated Docker TCP endpoint, and prefer TLS, SSH, or a narrowly scoped socket proxy.
 
 ## Browser content
 

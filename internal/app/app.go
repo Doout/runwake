@@ -166,10 +166,11 @@ func autoConnectLocalDocker(ctx context.Context, state *store.Store, logger *slo
 			continue
 		}
 		connection := model.Connection{
-			ID:   store.NewID("connection"),
-			Name: "Local Docker",
-			Kind: model.ConnectionDocker,
-			Mode: model.ModeDirect,
+			ID:         store.NewID("connection"),
+			Name:       "Local Docker",
+			Kind:       model.ConnectionDocker,
+			Mode:       model.ModeDirect,
+			AccessMode: model.AccessReadOnly,
 			Docker: &model.DockerConnection{
 				Endpoint: endpoint,
 			},

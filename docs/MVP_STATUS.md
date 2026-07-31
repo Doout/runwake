@@ -34,6 +34,7 @@ This first Runwake MVP is intentionally small. It is a live viewer, not a log pl
 - Compose topology across projects, services, containers, networks, ports, named volumes, and bind-mounted host paths;
 - on-demand stdout/stderr logs and container lifecycle events;
 - current CPU, working-set memory, limits, network and block I/O, and process count from Docker stats;
+- read-only access by default, with an explicit per-connection opt-in for container restart, force-delete, and Compose-project restart;
 
 ### Runtime behavior
 
@@ -55,7 +56,7 @@ This first Runwake MVP is intentionally small. It is a live viewer, not a log pl
 - durable log retention or full-text indexing;
 - durable metric retention, Prometheus-compatible storage, traces, alerts, or generated incident diagnoses;
 - multi-user identity, per-user authorization, or multi-tenancy;
-- editing, restarting, scaling, or deleting application workloads;
+- Kubernetes workload mutation, workload editing or scaling, and Docker actions beyond container restart/delete and Compose-project restart;
 - private registry credential management;
 - remote agents;
 - native desktop release signing, notarization, and installers.
