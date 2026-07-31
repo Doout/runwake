@@ -42,7 +42,6 @@ docker run --detach \
   --publish 127.0.0.1:8080:8080 \
   --volume runwake-data:/data \
   --volume /var/run/docker.sock:/var/run/docker.sock:ro \
-  --group-add "$(ls -Lln /var/run/docker.sock | awk '{print $4}')" \
   ghcr.io/doout/runwake:latest
 ```
 
@@ -52,8 +51,7 @@ connection, and keep the default `unix:///var/run/docker.sock` endpoint.
 To build and run the current source with Docker Compose instead:
 
 ```sh
-DOCKER_GID="$(ls -Lln /var/run/docker.sock | awk '{print $4}')" \
-  docker compose up --build --detach
+docker compose up --build --detach
 ```
 
 Both container commands persist configuration in a named Docker volume. For a
