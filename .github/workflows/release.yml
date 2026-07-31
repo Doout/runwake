@@ -18,6 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+      release_line: ${{ steps.version.outputs.release_line }}
     steps:
       - id: version
         env:
@@ -29,6 +30,7 @@ jobs:
             | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' \
             || { echo "release version must use semantic version form, for example 1.2.3" >&2; exit 1; }
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "release_line=${version%.*}" >> "$GITHUB_OUTPUT"
 
   server:
     needs: prepare
@@ -114,6 +116,7 @@ jobs:
           images: ghcr.io/${{ github.repository }}
           tags: |
             type=raw,value=${{ needs.prepare.outputs.version }}
+            type=raw,value=${{ needs.prepare.outputs.release_line }}
             type=raw,value=latest
 
       - name: Log in to GitHub Container Registry
