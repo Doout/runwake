@@ -32,6 +32,7 @@ type Config struct {
 	Logger              *slog.Logger
 	Version             string
 	RemoteAgentsEnabled bool
+	HTTPClient          *http.Client
 }
 
 type Server struct {
@@ -47,6 +48,7 @@ type Server struct {
 	logger              *slog.Logger
 	version             string
 	remoteAgentsEnabled bool
+	httpClient          *http.Client
 }
 
 func New(config Config) (*Server, error) {
@@ -55,6 +57,9 @@ func New(config Config) (*Server, error) {
 	}
 	if config.Logger == nil {
 		config.Logger = slog.Default()
+	}
+	if config.HTTPClient == nil {
+		config.HTTPClient = &http.Client{Timeout: 8 * time.Second}
 	}
 	return &Server{
 		state:               config.State,
@@ -69,6 +74,7 @@ func New(config Config) (*Server, error) {
 		logger:              config.Logger,
 		version:             config.Version,
 		remoteAgentsEnabled: config.RemoteAgentsEnabled,
+		httpClient:          config.HTTPClient,
 	}, nil
 }
 
@@ -84,6 +90,7 @@ func (s *Server) Handler() http.Handler {
 
 	api := http.NewServeMux()
 	api.HandleFunc("GET /api/v1/meta", s.handleMeta)
+	api.HandleFunc("GET /api/v1/update", s.handleUpdate)
 	api.HandleFunc("GET /api/v1/settings", s.handleSettingsGet)
 	api.HandleFunc("PUT /api/v1/settings", s.handleSettingsPut)
 	api.HandleFunc("GET /api/v1/connections", s.handleConnectionsList)
@@ -184,6 +191,36 @@ func (s *Server) handleMeta(w http.ResponseWriter, _ *http.Request) {
 			"remote_agents": s.remoteAgentsEnabled,
 		},
 	})
+}
+
+func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
+	request, err := http.NewRequestWithContext(r.Context(), http.MethodGet, "https://api.github.com/repos/Doout/runwake/releases/latest", nil)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "create update request")
+		return
+	}
+	request.Header.Set("Accept", "application/vnd.github+json")
+	request.Header.Set("User-Agent", "Runwake/"+s.version)
+	response, err := s.httpClient.Do(request)
+	if err != nil {
+		writeError(w, http.StatusBadGateway, "latest release could not be checked")
+		return
+	}
+	defer func() { _ = response.Body.Close() }()
+	if response.StatusCode != http.StatusOK {
+		writeError(w, http.StatusBadGateway, "latest release could not be checked")
+		return
+	}
+	var release struct {
+		TagName string `json:"tag_name"`
+		HTMLURL string `json:"html_url"`
+	}
+	decoder := json.NewDecoder(http.MaxBytesReader(w, response.Body, 1<<20))
+	if err := decoder.Decode(&release); err != nil || release.TagName == "" || release.HTMLURL == "" {
+		writeError(w, http.StatusBadGateway, "latest release response was invalid")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"current": s.version, "latest": strings.TrimPrefix(release.TagName, "v"), "url": release.HTMLURL})
 }
 
 func (s *Server) requestLog(next http.Handler) http.Handler {

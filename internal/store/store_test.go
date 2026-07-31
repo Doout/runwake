@@ -1,11 +1,46 @@
 package store
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/Doout/runwake/internal/model"
 )
+
+func TestUpgradeCompatibility(t *testing.T) {
+	dir := t.TempDir()
+	connections := `[{"id":"upgrade-test","name":"Older Docker","kind":"docker","mode":"direct","docker":{"endpoint":"unix:///var/run/docker.sock"},"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}]`
+	settings := `{"default_tail_lines":321}`
+	if err := os.WriteFile(filepath.Join(dir, "connections.json"), []byte(connections), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(settings), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	opened, err := Open(dir, model.DefaultSettings())
+	if err != nil {
+		t.Fatal(err)
+	}
+	connection, ok := opened.GetConnection("upgrade-test")
+	if !ok || connection.Name != "Older Docker" || connection.Docker == nil {
+		t.Fatalf("older connection was not preserved: %#v", connection)
+	}
+	if got := opened.Settings(); got.DefaultTailLines != 321 || got.KubectlPath == "" || got.SelectedMetricsIntervalSeconds <= 0 {
+		t.Fatalf("older settings were not merged with current defaults: %#v", got)
+	}
+	if saveErr := opened.SaveSettings(opened.Settings()); saveErr != nil {
+		t.Fatal(saveErr)
+	}
+	reopened, err := Open(dir, model.DefaultSettings())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := reopened.GetConnection("upgrade-test"); !ok || reopened.Settings().DefaultTailLines != 321 {
+		t.Fatal("state did not survive a current-version write and reopen")
+	}
+}
 
 func TestConnectionRoundTripAndRedaction(t *testing.T) {
 	dir := t.TempDir()

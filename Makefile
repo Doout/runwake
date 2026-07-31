@@ -1,4 +1,4 @@
-.PHONY: build test race run fix fmt format-check vet lint-install lint vuln-install vuln check release cross-build docker desktop desktop-install desktop-build desktop-dev smoke clean
+.PHONY: build test race run fix fmt format-check vet lint-install lint vuln-install vuln check upgrade-check release cross-build docker desktop desktop-install desktop-build desktop-dev smoke clean
 
 VERSION ?= 0.1.0
 WAILS_VERSION ?= v2.13.0
@@ -63,8 +63,13 @@ vuln: vuln-install
 
 check: format-check test vet lint
 	node --check webembed/dist/app.js
+	node --check webembed/dist/personal.js
+	node webembed/personal_test.js
 	node --check webembed/dist/terminal-text.js
 	node webembed/terminal_text_test.js
+
+upgrade-check:
+	./scripts/check-upgrade.sh
 
 run:
 	go run ./cmd/runwake serve --data-dir ./data --open
