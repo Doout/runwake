@@ -8,6 +8,8 @@ import (
 	"log"
 	"log/slog"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -61,11 +63,12 @@ func main() {
 	}
 	serverCtx, cancel := context.WithCancel(context.Background())
 	running, err := core.Start(serverCtx, core.ServerConfig{
-		Listen:            "127.0.0.1:0",
-		DataDir:           core.DefaultDataDir(),
-		OpenBrowser:       false,
-		AutoConnectDocker: true,
-		Logger:            slog.New(slog.NewTextHandler(os.Stderr, nil)),
+		Listen:                "127.0.0.1:0",
+		DataDir:               core.DefaultDataDir(),
+		OpenBrowser:           false,
+		AutoConnectDocker:     true,
+		InvestigationsEnabled: environmentEnabled("RUNWAKE_ENABLE_INVESTIGATIONS"),
+		Logger:                slog.New(slog.NewTextHandler(os.Stderr, nil)),
 	})
 	if err != nil {
 		cancel()
@@ -87,4 +90,9 @@ func main() {
 		shell.shutdown(context.Background())
 		log.Fatal(err)
 	}
+}
+
+func environmentEnabled(key string) bool {
+	value, err := strconv.ParseBool(strings.TrimSpace(os.Getenv(key)))
+	return err == nil && value
 }

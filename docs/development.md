@@ -35,6 +35,15 @@ Run a local hosted instance:
 
 The same Go core and embedded web interface back desktop and hosted modes.
 
+Investigations are experimental and disabled by default. Enable the interface
+for local development with either the command-line flag or environment variable:
+
+```sh
+./bin/runwake desktop --enable-investigations
+RUNWAKE_ENABLE_INVESTIGATIONS=true ./bin/runwake serve
+RUNWAKE_ENABLE_INVESTIGATIONS=true make desktop
+```
+
 On an empty desktop profile, startup checks `DOCKER_HOST`, the active Docker CLI context, and standard local socket paths. The first endpoint that answers the Docker version API is saved as `Local Docker`. Hosted mode does not perform this discovery.
 
 ## Checks

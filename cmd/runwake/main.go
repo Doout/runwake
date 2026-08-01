@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -61,6 +62,7 @@ func runServer(args []string, desktop bool) error {
 	authToken := flags.String("auth-token", os.Getenv("RUNWAKE_AUTH_TOKEN"), "optional web access token")
 	secretKey := flags.String("secret-key", os.Getenv("RUNWAKE_SECRET_KEY"), "base64 32-byte credential encryption key")
 	open := flags.Bool("open", defaultOpen, "open Runwake in the default browser")
+	enableInvestigations := flags.Bool("enable-investigations", envBool("RUNWAKE_ENABLE_INVESTIGATIONS"), "enable the experimental Investigations interface")
 	logLevel := flags.String("log-level", envOr("RUNWAKE_LOG_LEVEL", "info"), "debug, info, warn, or error")
 	if err := flags.Parse(args); err != nil {
 		return err
@@ -72,13 +74,14 @@ func runServer(args []string, desktop bool) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	running, err := app.Start(ctx, app.ServerConfig{
-		Listen:            *listen,
-		DataDir:           *dataDir,
-		AuthToken:         *authToken,
-		SecretKey:         *secretKey,
-		OpenBrowser:       *open,
-		AutoConnectDocker: desktop,
-		Logger:            logger,
+		Listen:                *listen,
+		DataDir:               *dataDir,
+		AuthToken:             *authToken,
+		SecretKey:             *secretKey,
+		OpenBrowser:           *open,
+		AutoConnectDocker:     desktop,
+		InvestigationsEnabled: *enableInvestigations,
+		Logger:                logger,
 	})
 	if err != nil {
 		return err
@@ -117,6 +120,11 @@ func envOr(key, fallback string) string {
 	return fallback
 }
 
+func envBool(key string) bool {
+	value, err := strconv.ParseBool(strings.TrimSpace(os.Getenv(key)))
+	return err == nil && value
+}
+
 func usage() {
 	fmt.Fprint(os.Stderr, `Runwake — live container and workload activity
 
@@ -128,5 +136,6 @@ Usage:
 Common environment variables:
   RUNWAKE_DATA_DIR, RUNWAKE_LISTEN
   RUNWAKE_AUTH_TOKEN, RUNWAKE_SECRET_KEY
+  RUNWAKE_ENABLE_INVESTIGATIONS
 `)
 }

@@ -178,7 +178,7 @@
               <div id="log-results" class="log-results"><div class="log-inspector-empty">Search or apply filters to build a jump list.</div></div>
             </section>
             <section id="log-record-inspector" class="log-record-inspector">
-              <div class="log-inspector-heading"><div><strong>Record</strong><small>Select a line to inspect or reformat.</small></div><button class="btn ghost small" data-action="pin-selected-record" disabled>Pin</button></div>
+              <div class="log-inspector-heading"><div><strong>Record</strong><small>Select a line to inspect or reformat.</small></div>${investigationsAvailable() ? `<button class="btn ghost small" data-action="pin-selected-record" disabled>Pin</button>` : ""}</div>
               <div id="log-record-detail" class="log-record-detail"><div class="log-inspector-empty">Select a log line.</div></div>
             </section>
           </aside>
@@ -187,7 +187,7 @@
     shell(`<section class="page activity-page ${view === "activity" ? "activity-page-live" : ""}">
       <header class="page-header activity-header">
         <div><button class="btn ghost small activity-back" data-action="back-workloads">← Workloads</button><h1 id="activity-title" class="page-title activity-title">${html(title)}</h1><div id="activity-meta" class="activity-meta">${activityMetaHTML(request, connection, workload)}</div></div>
-        <div class="header-actions"><button class="btn" data-action="save-activity-view">Save view</button>${activeInvestigation() ? `<button class="btn" data-nav="/investigations">${html(activeInvestigation().name)} · ${activeInvestigation().evidence.length}</button>` : `<button class="btn" data-action="new-investigation">Start investigation</button>`}${view === "metrics" ? `<button class="btn primary" data-action="pin-latest-metric">Pin latest sample</button>` : ""}</div>
+        <div class="header-actions"><button class="btn" data-action="save-activity-view">Save view</button>${investigationsAvailable() ? activeInvestigation() ? `<button class="btn" data-nav="/investigations">${html(activeInvestigation().name)} · ${activeInvestigation().evidence.length}</button>` : `<button class="btn" data-action="new-investigation">Start investigation</button>` : ""}${view === "metrics" && investigationsAvailable() ? `<button class="btn primary" data-action="pin-latest-metric">Pin latest sample</button>` : ""}</div>
       </header>
       ${workloadViewTabs(request, view, workload)}
       ${content}

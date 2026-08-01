@@ -30,15 +30,16 @@ import (
 var Version = "0.1.0"
 
 type ServerConfig struct {
-	Listen            string
-	DataDir           string
-	AuthToken         string
-	SecretKey         string
-	PublicURL         string
-	DefaultAgentImage string
-	OpenBrowser       bool
-	AutoConnectDocker bool
-	Logger            *slog.Logger
+	Listen                string
+	DataDir               string
+	AuthToken             string
+	SecretKey             string
+	PublicURL             string
+	DefaultAgentImage     string
+	OpenBrowser           bool
+	AutoConnectDocker     bool
+	InvestigationsEnabled bool
+	Logger                *slog.Logger
 }
 
 type RunningServer struct {
@@ -96,17 +97,18 @@ func Start(ctx context.Context, config ServerConfig) (*RunningServer, error) {
 	metricStreams := metrics.NewManager(factory)
 	workloads := workloadcache.NewMemory()
 	appServer, err := server.New(server.Config{
-		State:      state,
-		Secrets:    secrets,
-		Factory:    factory,
-		Activities: activities,
-		Metrics:    metricStreams,
-		Workloads:  workloads,
-		Agents:     hub,
-		Assets:     webembed.FS(),
-		AuthToken:  config.AuthToken,
-		Logger:     config.Logger,
-		Version:    Version,
+		State:                 state,
+		Secrets:               secrets,
+		Factory:               factory,
+		Activities:            activities,
+		Metrics:               metricStreams,
+		Workloads:             workloads,
+		Agents:                hub,
+		Assets:                webembed.FS(),
+		AuthToken:             config.AuthToken,
+		Logger:                config.Logger,
+		Version:               Version,
+		InvestigationsEnabled: config.InvestigationsEnabled,
 		// Remote agents remain gated until their protocol and lifecycle are
 		// ready for a supported release.
 		RemoteAgentsEnabled: false,

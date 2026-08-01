@@ -116,9 +116,20 @@
   }
 
   function workloadSelectionBar() {
-    const selected = state.selectedWorkloads.size;
+    const selectedItems = selectedWorkloadItems();
+    const selected = selectedItems.length;
     if (!selected) return "";
-    return `<div class="workload-selection-bar" role="status"><span><strong>${selected}</strong> selected</span><div><button type="button" class="btn ghost small" data-action="clear-workload-selection">Clear</button><button type="button" class="btn primary small" data-action="open-selected-logs">Open merged logs</button></div></div>`;
+    const everySelectionIsManageable = selected === state.selectedWorkloads.size
+      && selectedItems.every(item => item.platform === "docker" && item.uid && canManageDockerConnection(item.connection_id));
+    const includesDocker = selectedItems.some(item => item.platform === "docker");
+    const runtimeActions = everySelectionIsManageable
+      ? `<button type="button" class="btn small" data-action="restart-selected-containers">Restart ${selected}</button><button type="button" class="btn destructive small" data-action="delete-selected-containers">Delete ${selected}</button>`
+      : includesDocker ? `<span class="workload-selection-note">Runtime actions require managed Docker containers only.</span>` : "";
+    return `<div class="workload-selection-bar"><span role="status" aria-live="polite"><strong>${selected}</strong> selected</span><div>${runtimeActions}<button type="button" class="btn ghost small" data-action="clear-workload-selection">Clear</button><button type="button" class="btn primary small" data-action="open-selected-logs">Open merged logs</button></div></div>`;
+  }
+
+  function selectedWorkloadItems() {
+    return state.workloads.filter(item => state.selectedWorkloads.has(metricKey(item)));
   }
 
   function updateWorkloadSelectionBar() {
@@ -143,6 +154,7 @@
   }
 
   function renderInvestigations() {
+    if (!investigationsAvailable()) return navigate("/workloads");
     const sessions = state.personal.sessions || [];
     const active = activeInvestigation();
     const viewed = active || sessions.find(item => item.id === state.viewingSessionID && item.readOnly);
@@ -709,7 +721,7 @@
       ? `<button type="button" class="location-primary location-primary-link" data-topology="${topologyRequest}" aria-label="Open ${html(composeProject)} topology">${html(locationPrimary)}</button>`
       : `<div class="location-primary" title="${html(locationPrimary)}">${html(locationPrimary)}</div>`;
     return `<tr class="clickable" tabindex="0" ${rowIndex >= 0 ? `aria-rowindex="${rowIndex + 2}"` : ""} data-workload="${encoded}" data-metric-key="${html(metricKey(item))}">
-      <td class="workload-select-cell"><input type="checkbox" data-select-workload="${html(selectionKey)}" data-request="${encoded}" aria-label="Select ${html(item.name)}" ${state.selectedWorkloads.has(selectionKey) ? "checked" : ""}></td>
+      <td class="workload-select-cell"><label class="workload-select-control" title="Select ${html(item.name)}"><input type="checkbox" data-select-workload="${html(selectionKey)}" data-request="${encoded}" aria-label="Select ${html(item.name)}" ${state.selectedWorkloads.has(selectionKey) ? "checked" : ""}></label></td>
       <td><div class="cell-title">${html(item.name)}</div><div class="cell-subtitle">${html(item.kind || item.platform)}</div><div class="workload-mobile-location">${html(locationPrimary)} · ${html(locationSecondary)}</div></td>
       <td>${locationPrimaryHTML}<div class="location-route"><span>${html(locationType)}</span><span aria-hidden="true">·</span><span title="${html(locationSecondary)}">${html(locationSecondary)}</span></div></td>
       <td><span class="status ${statusBucket(item)}">${html(item.state || "Unknown")}</span><div class="cell-subtitle">${html(detail)}</div></td>
