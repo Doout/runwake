@@ -187,6 +187,39 @@ func newTestServer(t *testing.T, authToken string) (*Server, *store.Store, *stor
 	return s, state, secrets, p
 }
 
+func TestMetaReportsFeatureFlags(t *testing.T) {
+	s, _, _, _ := newTestServer(t, "")
+
+	readFeatures := func() map[string]bool {
+		t.Helper()
+		recorder := httptest.NewRecorder()
+		s.handleMeta(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/meta", nil))
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("unexpected status: %d: %s", recorder.Code, recorder.Body.String())
+		}
+		var result struct {
+			Features map[string]bool `json:"features"`
+		}
+		if err := json.Unmarshal(recorder.Body.Bytes(), &result); err != nil {
+			t.Fatal(err)
+		}
+		return result.Features
+	}
+
+	features := readFeatures()
+	if !features["remote_agents"] {
+		t.Fatal("expected remote agents to be enabled in the test server")
+	}
+	if features["investigations"] {
+		t.Fatal("expected investigations to be disabled by default")
+	}
+
+	s.investigationsEnabled = true
+	if !readFeatures()["investigations"] {
+		t.Fatal("expected investigations to be reported when enabled")
+	}
+}
+
 func TestUpdateCheckUsesLatestGitHubRelease(t *testing.T) {
 	s, _, _, _ := newTestServer(t, "")
 	s.version = "0.1.0"

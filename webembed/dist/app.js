@@ -75,6 +75,17 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
   const WORKLOAD_OVERSCAN = 8;
   const WORKLOAD_AUTO_METRICS_LIMIT = 2000;
   const WORKLOAD_OVERVIEW_THRESHOLD = 500;
+  const INVESTIGATION_ACTIONS = new Set([
+    "new-investigation",
+    "confirm-new-investigation",
+    "activate-investigation",
+    "close-investigation",
+    "delete-investigation",
+    "export-investigation",
+    "confirm-export-investigation",
+    "pin-selected-record",
+    "pin-latest-metric",
+  ]);
 
   class AuthenticationRequired extends Error {}
 
@@ -167,7 +178,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
   }
 
   function activeInvestigation() {
-    return personal?.activeSession(state.personal) || null;
+    return investigationsAvailable() ? personal?.activeSession(state.personal) || null : null;
   }
 
   function routeInfo() {
@@ -190,7 +201,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
         <div class="brand"><img class="brand-mark" src="/icon.svg" alt=""><span>Runwake</span></div>
         <nav class="nav" aria-label="Primary">
           ${navButton("workloads", "▦", "Workloads", active)}
-          ${navButton("investigations", "◎", "Investigations", active)}
+          ${investigationsAvailable() ? navButton("investigations", "◎", "Investigations", active) : ""}
           ${navButton("connections", "↔", "Connections", active)}
           ${navButton("settings", "⚙", "Settings", active)}
         </nav>
@@ -216,6 +227,10 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
 
   function remoteAgentsAvailable() {
     return Boolean(state.meta?.features?.remote_agents);
+  }
+
+  function investigationsAvailable() {
+    return Boolean(state.meta?.features?.investigations);
   }
   async function loadSettings() {
     state.settings = await api("/api/v1/settings");
@@ -322,7 +337,10 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     try {
       if (!state.meta) await loadMeta();
       if (route.path === "/connections") return renderConnections();
-      if (route.path === "/investigations") return renderInvestigations();
+      if (route.path === "/investigations") {
+        if (!investigationsAvailable()) return navigate("/workloads");
+        return renderInvestigations();
+      }
       if (route.path === "/settings") return renderSettings();
       if (route.path === "/activity") return renderActivity(route.params);
       if (route.path === "/topology") return renderTopology(route.params);
@@ -479,9 +497,20 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
   }
 
   function workloadSelectionBar() {
-    const selected = state.selectedWorkloads.size;
+    const selectedItems = selectedWorkloadItems();
+    const selected = selectedItems.length;
     if (!selected) return "";
-    return `<div class="workload-selection-bar" role="status"><span><strong>${selected}</strong> selected</span><div><button type="button" class="btn ghost small" data-action="clear-workload-selection">Clear</button><button type="button" class="btn primary small" data-action="open-selected-logs">Open merged logs</button></div></div>`;
+    const everySelectionIsManageable = selected === state.selectedWorkloads.size
+      && selectedItems.every(item => item.platform === "docker" && item.uid && canManageDockerConnection(item.connection_id));
+    const includesDocker = selectedItems.some(item => item.platform === "docker");
+    const runtimeActions = everySelectionIsManageable
+      ? `<button type="button" class="btn small" data-action="restart-selected-containers">Restart ${selected}</button><button type="button" class="btn destructive small" data-action="delete-selected-containers">Delete ${selected}</button>`
+      : includesDocker ? `<span class="workload-selection-note">Runtime actions require managed Docker containers only.</span>` : "";
+    return `<div class="workload-selection-bar"><span role="status" aria-live="polite"><strong>${selected}</strong> selected</span><div>${runtimeActions}<button type="button" class="btn ghost small" data-action="clear-workload-selection">Clear</button><button type="button" class="btn primary small" data-action="open-selected-logs">Open merged logs</button></div></div>`;
+  }
+
+  function selectedWorkloadItems() {
+    return state.workloads.filter(item => state.selectedWorkloads.has(metricKey(item)));
   }
 
   function updateWorkloadSelectionBar() {
@@ -506,6 +535,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
   }
 
   function renderInvestigations() {
+    if (!investigationsAvailable()) return navigate("/workloads");
     const sessions = state.personal.sessions || [];
     const active = activeInvestigation();
     const viewed = active || sessions.find(item => item.id === state.viewingSessionID && item.readOnly);
@@ -1072,7 +1102,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
       ? `<button type="button" class="location-primary location-primary-link" data-topology="${topologyRequest}" aria-label="Open ${html(composeProject)} topology">${html(locationPrimary)}</button>`
       : `<div class="location-primary" title="${html(locationPrimary)}">${html(locationPrimary)}</div>`;
     return `<tr class="clickable" tabindex="0" ${rowIndex >= 0 ? `aria-rowindex="${rowIndex + 2}"` : ""} data-workload="${encoded}" data-metric-key="${html(metricKey(item))}">
-      <td class="workload-select-cell"><input type="checkbox" data-select-workload="${html(selectionKey)}" data-request="${encoded}" aria-label="Select ${html(item.name)}" ${state.selectedWorkloads.has(selectionKey) ? "checked" : ""}></td>
+      <td class="workload-select-cell"><label class="workload-select-control" title="Select ${html(item.name)}"><input type="checkbox" data-select-workload="${html(selectionKey)}" data-request="${encoded}" aria-label="Select ${html(item.name)}" ${state.selectedWorkloads.has(selectionKey) ? "checked" : ""}></label></td>
       <td><div class="cell-title">${html(item.name)}</div><div class="cell-subtitle">${html(item.kind || item.platform)}</div><div class="workload-mobile-location">${html(locationPrimary)} · ${html(locationSecondary)}</div></td>
       <td>${locationPrimaryHTML}<div class="location-route"><span>${html(locationType)}</span><span aria-hidden="true">·</span><span title="${html(locationSecondary)}">${html(locationSecondary)}</span></div></td>
       <td><span class="status ${statusBucket(item)}">${html(item.state || "Unknown")}</span><div class="cell-subtitle">${html(detail)}</div></td>
@@ -2663,7 +2693,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
               <div id="log-results" class="log-results"><div class="log-inspector-empty">Search or apply filters to build a jump list.</div></div>
             </section>
             <section id="log-record-inspector" class="log-record-inspector">
-              <div class="log-inspector-heading"><div><strong>Record</strong><small>Select a line to inspect or reformat.</small></div><button class="btn ghost small" data-action="pin-selected-record" disabled>Pin</button></div>
+              <div class="log-inspector-heading"><div><strong>Record</strong><small>Select a line to inspect or reformat.</small></div>${investigationsAvailable() ? `<button class="btn ghost small" data-action="pin-selected-record" disabled>Pin</button>` : ""}</div>
               <div id="log-record-detail" class="log-record-detail"><div class="log-inspector-empty">Select a log line.</div></div>
             </section>
           </aside>
@@ -2672,7 +2702,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     shell(`<section class="page activity-page ${view === "activity" ? "activity-page-live" : ""}">
       <header class="page-header activity-header">
         <div><button class="btn ghost small activity-back" data-action="back-workloads">← Workloads</button><h1 id="activity-title" class="page-title activity-title">${html(title)}</h1><div id="activity-meta" class="activity-meta">${activityMetaHTML(request, connection, workload)}</div></div>
-        <div class="header-actions"><button class="btn" data-action="save-activity-view">Save view</button>${activeInvestigation() ? `<button class="btn" data-nav="/investigations">${html(activeInvestigation().name)} · ${activeInvestigation().evidence.length}</button>` : `<button class="btn" data-action="new-investigation">Start investigation</button>`}${view === "metrics" ? `<button class="btn primary" data-action="pin-latest-metric">Pin latest sample</button>` : ""}</div>
+        <div class="header-actions"><button class="btn" data-action="save-activity-view">Save view</button>${investigationsAvailable() ? activeInvestigation() ? `<button class="btn" data-nav="/investigations">${html(activeInvestigation().name)} · ${activeInvestigation().evidence.length}</button>` : `<button class="btn" data-action="new-investigation">Start investigation</button>` : ""}${view === "metrics" && investigationsAvailable() ? `<button class="btn primary" data-action="pin-latest-metric">Pin latest sample</button>` : ""}</div>
       </header>
       ${workloadViewTabs(request, view, workload)}
       ${content}
@@ -5823,17 +5853,20 @@ current-context: runwake-openshift
   }
 
   function startInvestigation(name, scope = currentInvestigationScope()) {
+    if (!investigationsAvailable()) return null;
     const session = personal.createSession(state.personal, scope, name || scope.name || "Investigation");
     savePersonalState(`${session.name} started`);
     return session;
   }
 
   function showNewInvestigationModal() {
+    if (!investigationsAvailable()) return;
     const suggested = state.stream?.request?.name ? `${state.stream.request.name} investigation` : "New investigation";
     showModal(`<div class="modal-header"><div><h2 class="modal-title">Start investigation</h2><p class="modal-copy">Pinned evidence stays in this browser until you export or delete it.</p></div><button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><label>Name<input id="new-investigation-name" class="field" value="${html(suggested)}" maxlength="160" autofocus></label></div><div class="modal-footer"><button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="confirm-new-investigation">Start</button></div>`);
   }
 
   function pinEvidence(kind, payload) {
+    if (!investigationsAvailable()) return null;
     if (!activeInvestigation()) startInvestigation(payload?.workload ? `${payload.workload} investigation` : "Investigation");
     const evidence = personal.addEvidence(state.personal, kind, payload);
     savePersonalState(`${kind === "metric" ? "Metric sample" : "Record"} pinned`);
@@ -5841,6 +5874,7 @@ current-context: runwake-openshift
   }
 
   function pinSelectedRecord() {
+    if (!investigationsAvailable()) return;
     const selected = selectedLogRecord();
     if (!selected) return toast("Select a record first.", "error");
     const record = selected.record;
@@ -5858,12 +5892,14 @@ current-context: runwake-openshift
   }
 
   function pinLatestMetric() {
+    if (!investigationsAvailable()) return;
     const sample = state.metricStream?.samples?.at(-1);
     if (!sample) return toast("No metric sample is available yet.", "error");
     pinEvidence("metric", sample);
   }
 
   function exportInvestigation(sessionID) {
+    if (!investigationsAvailable()) return;
     const session = state.personal.sessions.find(item => item.id === sessionID);
     if (!session) return toast("Investigation not found.", "error");
     const preview = personal.exportBundle(session, []);
@@ -5872,6 +5908,7 @@ current-context: runwake-openshift
   }
 
   function confirmExportInvestigation(sessionID) {
+    if (!investigationsAvailable()) return;
     const session = state.personal.sessions.find(item => item.id === sessionID);
     if (!session) return;
     const patterns = String(document.getElementById("export-redaction-patterns")?.value || "").split("\n").map(value => value.trim()).filter(Boolean);
@@ -6028,12 +6065,15 @@ current-context: runwake-openshift
   }
 
   function personalCommands() {
+    const investigationCommands = investigationsAvailable() ? [
+      { id: "investigations", label: "Open investigations", detail: "Navigation", run: () => navigate("/investigations") },
+      { id: "new-investigation", label: "Start investigation", detail: "Local workflow", run: showNewInvestigationModal },
+    ] : [];
     const base = [
       { id: "workloads", label: "Open workloads", detail: "Navigation", run: () => navigate("/workloads") },
-      { id: "investigations", label: "Open investigations", detail: "Navigation", run: () => navigate("/investigations") },
+      ...investigationCommands,
       { id: "connections", label: "Open connections", detail: "Navigation", run: () => navigate("/connections") },
       { id: "settings", label: "Open settings", detail: "Navigation", run: () => navigate("/settings") },
-      { id: "new-investigation", label: "Start investigation", detail: "Local workflow", run: showNewInvestigationModal },
       { id: "handoffs", label: "Configure observability handoffs", detail: "Local workflow", run: showHandoffModal },
       { id: "diagnostics", label: "Export redacted diagnostics", detail: "Reliability", run: exportDiagnostics },
     ];
@@ -6217,6 +6257,98 @@ current-context: runwake-openshift
     modalRoot.querySelector("[autofocus]")?.focus();
   }
 
+  function selectedDockerRuntimeTargets() {
+    return selectedWorkloadItems()
+      .filter(item => item.platform === "docker" && item.uid && canManageDockerConnection(item.connection_id))
+      .map(item => ({ key: metricKey(item), connectionID: item.connection_id, containerID: item.uid, name: item.name }));
+  }
+
+  function showSelectedDockerContainersConfirmation(operation) {
+    const selectedItems = selectedWorkloadItems();
+    const targets = selectedDockerRuntimeTargets();
+    if (!targets.length || targets.length !== selectedItems.length || selectedItems.length !== state.selectedWorkloads.size) {
+      toast("Select only containers from Docker connections with Manage containers enabled.", "error");
+      return;
+    }
+    const deleting = operation === "delete";
+    const count = targets.length;
+    const titleID = `${operation}-selected-containers-title`;
+    closeTopologyContextMenu();
+    showModal(`<div class="modal-header">
+        <div><h2 id="${titleID}" class="modal-title">${deleting ? "Delete" : "Restart"} ${count} container${count === 1 ? "" : "s"}?</h2><p class="modal-copy">${deleting ? "Docker will force-remove every selected container. This cannot be undone." : "Docker will stop and start every selected container."}</p></div>
+        <button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="${deleting ? "remove-confirmation" : "runtime-action-confirmation"}">
+          <span class="${deleting ? "remove-confirmation-mark" : "runtime-action-mark"}" aria-hidden="true">${deleting ? "!" : "↻"}</span>
+          <div><strong>${count} selected container${count === 1 ? "" : "s"}</strong><p>${deleting ? "Running containers will be stopped first. Compose tooling may recreate them later." : "Traffic may be interrupted while the containers restart. Their restart policies remain unchanged."}</p></div>
+        </div>
+        <ul class="bulk-runtime-targets" aria-label="Selected containers">${targets.map(target => `<li>${html(target.name)}</li>`).join("")}</ul>
+        <div id="docker-action-error" class="notice error remove-error" role="alert" hidden></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" data-action="close-modal" autofocus>Cancel</button>
+        <button class="btn ${deleting ? "destructive" : "primary"}" data-action="confirm-${operation}-selected-containers">${deleting ? "Delete" : "Restart"} ${count} container${count === 1 ? "" : "s"}</button>
+      </div>`, "confirm-modal");
+    modalRoot.querySelector(".modal")?.setAttribute("aria-labelledby", titleID);
+    modalRoot.querySelector("[autofocus]")?.focus();
+  }
+
+  async function performSelectedDockerRuntimeAction(button, operation) {
+    if (!button) return;
+    const targets = selectedDockerRuntimeTargets();
+    if (!targets.length || targets.length !== selectedWorkloadItems().length || targets.length !== state.selectedWorkloads.size) {
+      closeModal();
+      toast("The selection changed. Select the containers again.", "error");
+      return;
+    }
+    const deleting = operation === "delete";
+    const modalButtons = [...modalRoot.querySelectorAll("button")];
+    const errorNotice = document.getElementById("docker-action-error");
+    modalButtons.forEach(item => { item.disabled = true; });
+    if (errorNotice) {
+      errorNotice.hidden = true;
+      errorNotice.textContent = "";
+    }
+    const succeeded = [];
+    const failed = [];
+    for (let index = 0; index < targets.length; index += 1) {
+      const target = targets[index];
+      button.textContent = `${deleting ? "Deleting" : "Restarting"} ${index + 1}/${targets.length}…`;
+      try {
+        const path = `/api/v1/connections/${encodeURIComponent(target.connectionID)}/docker/containers/${encodeURIComponent(target.containerID)}${deleting ? "?force=true" : "/restart"}`;
+        await api(path, { method: deleting ? "DELETE" : "POST" });
+        succeeded.push(target);
+        state.selectedWorkloads.delete(target.key);
+        if (deleting) {
+          state.workloads = state.workloads.filter(item => item.uid !== target.containerID || item.connection_id !== target.connectionID);
+        }
+      } catch (error) {
+        if (error instanceof AuthenticationRequired) throw error;
+        failed.push({ target, error });
+      }
+    }
+    const connectionIDs = [...new Set(succeeded.map(target => target.connectionID))];
+    for (const connectionID of connectionIDs) {
+      state.workloadCachedConnections.delete(connectionID);
+      state.workloadPendingConnections.add(connectionID);
+    }
+    if (connectionIDs.length && routeInfo().path === "/workloads") refreshWorkloads(connectionIDs);
+    if (!failed.length) {
+      closeModal();
+      toast(`${succeeded.length} container${succeeded.length === 1 ? "" : "s"} ${deleting ? "deleted" : "restarted"}`);
+      return;
+    }
+    updateWorkloadSelectionBar();
+    if (errorNotice) {
+      errorNotice.textContent = `${failed.length} container${failed.length === 1 ? "" : "s"} failed: ${failed.map(item => `${item.target.name} — ${item.error.message}`).join("; ")}`;
+      errorNotice.hidden = false;
+    }
+    modalButtons.forEach(item => { item.disabled = false; });
+    button.textContent = `Retry ${failed.length}`;
+    toast(`${succeeded.length} completed · ${failed.length} failed`, "error");
+  }
+
   async function performDockerRuntimeAction(button, options) {
     if (!button) return;
     const errorNotice = document.getElementById("docker-action-error");
@@ -6398,6 +6530,7 @@ current-context: runwake-openshift
       return;
     }
     const workload = event.target.closest("[data-workload]");
+    if (event.target.closest(".workload-select-cell")) return;
     if (workload && !event.target.closest("[data-action], input, button, a, select, textarea")) {
       const request = JSON.parse(decodeURIComponent(workload.dataset.workload));
       navigate(`/activity?${new URLSearchParams(request).toString()}`);
@@ -6407,6 +6540,7 @@ current-context: runwake-openshift
     if (!target) return;
     const action = target.dataset.action;
     if (action !== "toggle-connection-menu") closeConnectionMenus();
+    if (!investigationsAvailable() && INVESTIGATION_ACTIONS.has(action)) return;
     try {
       switch (action) {
         case "add-connection":
@@ -6570,6 +6704,18 @@ current-context: runwake-openshift
         case "clear-workload-selection":
           state.selectedWorkloads.clear();
           updateWorkloadSelectionBar();
+          break;
+        case "restart-selected-containers":
+          showSelectedDockerContainersConfirmation("restart");
+          break;
+        case "delete-selected-containers":
+          showSelectedDockerContainersConfirmation("delete");
+          break;
+        case "confirm-restart-selected-containers":
+          await performSelectedDockerRuntimeAction(target, "restart");
+          break;
+        case "confirm-delete-selected-containers":
+          await performSelectedDockerRuntimeAction(target, "delete");
           break;
         case "open-selected-logs": openSelectedLogs(); break;
         case "refresh-workloads":
@@ -6910,7 +7056,7 @@ current-context: runwake-openshift
     if (selection.checked) {
       if (state.selectedWorkloads.size >= 12) {
         selection.checked = false;
-        toast("Merged logs support up to 12 workloads at once.", "error");
+        toast("Select up to 12 workloads at once.", "error");
         return;
       }
       state.selectedWorkloads.add(selection.dataset.selectWorkload);

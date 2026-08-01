@@ -75,6 +75,17 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
   const WORKLOAD_OVERSCAN = 8;
   const WORKLOAD_AUTO_METRICS_LIMIT = 2000;
   const WORKLOAD_OVERVIEW_THRESHOLD = 500;
+  const INVESTIGATION_ACTIONS = new Set([
+    "new-investigation",
+    "confirm-new-investigation",
+    "activate-investigation",
+    "close-investigation",
+    "delete-investigation",
+    "export-investigation",
+    "confirm-export-investigation",
+    "pin-selected-record",
+    "pin-latest-metric",
+  ]);
 
   class AuthenticationRequired extends Error {}
 
@@ -167,7 +178,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
   }
 
   function activeInvestigation() {
-    return personal?.activeSession(state.personal) || null;
+    return investigationsAvailable() ? personal?.activeSession(state.personal) || null : null;
   }
 
   function routeInfo() {
@@ -190,7 +201,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
         <div class="brand"><img class="brand-mark" src="/icon.svg" alt=""><span>Runwake</span></div>
         <nav class="nav" aria-label="Primary">
           ${navButton("workloads", "▦", "Workloads", active)}
-          ${navButton("investigations", "◎", "Investigations", active)}
+          ${investigationsAvailable() ? navButton("investigations", "◎", "Investigations", active) : ""}
           ${navButton("connections", "↔", "Connections", active)}
           ${navButton("settings", "⚙", "Settings", active)}
         </nav>
@@ -216,6 +227,10 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
 
   function remoteAgentsAvailable() {
     return Boolean(state.meta?.features?.remote_agents);
+  }
+
+  function investigationsAvailable() {
+    return Boolean(state.meta?.features?.investigations);
   }
   async function loadSettings() {
     state.settings = await api("/api/v1/settings");
@@ -322,7 +337,10 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     try {
       if (!state.meta) await loadMeta();
       if (route.path === "/connections") return renderConnections();
-      if (route.path === "/investigations") return renderInvestigations();
+      if (route.path === "/investigations") {
+        if (!investigationsAvailable()) return navigate("/workloads");
+        return renderInvestigations();
+      }
       if (route.path === "/settings") return renderSettings();
       if (route.path === "/activity") return renderActivity(route.params);
       if (route.path === "/topology") return renderTopology(route.params);

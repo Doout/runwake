@@ -6,17 +6,20 @@
   }
 
   function startInvestigation(name, scope = currentInvestigationScope()) {
+    if (!investigationsAvailable()) return null;
     const session = personal.createSession(state.personal, scope, name || scope.name || "Investigation");
     savePersonalState(`${session.name} started`);
     return session;
   }
 
   function showNewInvestigationModal() {
+    if (!investigationsAvailable()) return;
     const suggested = state.stream?.request?.name ? `${state.stream.request.name} investigation` : "New investigation";
     showModal(`<div class="modal-header"><div><h2 class="modal-title">Start investigation</h2><p class="modal-copy">Pinned evidence stays in this browser until you export or delete it.</p></div><button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><label>Name<input id="new-investigation-name" class="field" value="${html(suggested)}" maxlength="160" autofocus></label></div><div class="modal-footer"><button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="confirm-new-investigation">Start</button></div>`);
   }
 
   function pinEvidence(kind, payload) {
+    if (!investigationsAvailable()) return null;
     if (!activeInvestigation()) startInvestigation(payload?.workload ? `${payload.workload} investigation` : "Investigation");
     const evidence = personal.addEvidence(state.personal, kind, payload);
     savePersonalState(`${kind === "metric" ? "Metric sample" : "Record"} pinned`);
@@ -24,6 +27,7 @@
   }
 
   function pinSelectedRecord() {
+    if (!investigationsAvailable()) return;
     const selected = selectedLogRecord();
     if (!selected) return toast("Select a record first.", "error");
     const record = selected.record;
@@ -41,12 +45,14 @@
   }
 
   function pinLatestMetric() {
+    if (!investigationsAvailable()) return;
     const sample = state.metricStream?.samples?.at(-1);
     if (!sample) return toast("No metric sample is available yet.", "error");
     pinEvidence("metric", sample);
   }
 
   function exportInvestigation(sessionID) {
+    if (!investigationsAvailable()) return;
     const session = state.personal.sessions.find(item => item.id === sessionID);
     if (!session) return toast("Investigation not found.", "error");
     const preview = personal.exportBundle(session, []);
@@ -55,6 +61,7 @@
   }
 
   function confirmExportInvestigation(sessionID) {
+    if (!investigationsAvailable()) return;
     const session = state.personal.sessions.find(item => item.id === sessionID);
     if (!session) return;
     const patterns = String(document.getElementById("export-redaction-patterns")?.value || "").split("\n").map(value => value.trim()).filter(Boolean);
@@ -211,12 +218,15 @@
   }
 
   function personalCommands() {
+    const investigationCommands = investigationsAvailable() ? [
+      { id: "investigations", label: "Open investigations", detail: "Navigation", run: () => navigate("/investigations") },
+      { id: "new-investigation", label: "Start investigation", detail: "Local workflow", run: showNewInvestigationModal },
+    ] : [];
     const base = [
       { id: "workloads", label: "Open workloads", detail: "Navigation", run: () => navigate("/workloads") },
-      { id: "investigations", label: "Open investigations", detail: "Navigation", run: () => navigate("/investigations") },
+      ...investigationCommands,
       { id: "connections", label: "Open connections", detail: "Navigation", run: () => navigate("/connections") },
       { id: "settings", label: "Open settings", detail: "Navigation", run: () => navigate("/settings") },
-      { id: "new-investigation", label: "Start investigation", detail: "Local workflow", run: showNewInvestigationModal },
       { id: "handoffs", label: "Configure observability handoffs", detail: "Local workflow", run: showHandoffModal },
       { id: "diagnostics", label: "Export redacted diagnostics", detail: "Reliability", run: exportDiagnostics },
     ];

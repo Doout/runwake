@@ -212,8 +212,11 @@ details.disclosure[open] summary { margin-bottom: 16px; }
 .workload-table th:nth-child(5) { width: 10%; }
 .workload-table th:nth-child(6) { width: 12%; }
 .workload-table th:nth-child(7) { width: 11%; text-align: right; }
-.workload-select-cell { padding-inline: 12px !important; text-align: center; }
-.workload-select-cell input { width: 15px; height: 15px; accent-color: var(--accent-strong); }
+.workload-select-cell { position: relative; padding: 0 !important; text-align: center; }
+.workload-select-control { position: absolute; inset: 0; display: grid; place-items: center; cursor: pointer; }
+.workload-select-control:hover { background: var(--surface-2); }
+.workload-select-control:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: -3px; }
+.workload-select-control input { width: 18px; height: 18px; accent-color: var(--accent-strong); cursor: pointer; }
 .workload-action-cell { color: var(--subtle); text-align: right; }
 .workload-action-menu { display: inline-block; text-align: left; }
 .workload-action-menu .connection-menu { width: 164px; }

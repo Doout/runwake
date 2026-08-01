@@ -13,6 +13,7 @@ services:
       RUNWAKE_AUTH_TOKEN: ${RUNWAKE_AUTH_TOKEN:-}
       RUNWAKE_SECRET_KEY: ${RUNWAKE_SECRET_KEY:-}
       RUNWAKE_LOG_LEVEL: ${RUNWAKE_LOG_LEVEL:-info}
+      RUNWAKE_ENABLE_INVESTIGATIONS: ${RUNWAKE_ENABLE_INVESTIGATIONS:-false}
     volumes:
       - runwake-data:/data
       - ${RUNWAKE_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock:ro

@@ -20,35 +20,37 @@ import (
 )
 
 type Config struct {
-	State               *store.Store
-	Secrets             *store.SecretStore
-	Factory             provider.Factory
-	Activities          *activity.Manager
-	Metrics             *metrics.Manager
-	Workloads           workloadcache.Cache
-	Agents              *agent.Hub
-	Assets              fs.FS
-	AuthToken           string
-	Logger              *slog.Logger
-	Version             string
-	RemoteAgentsEnabled bool
-	HTTPClient          *http.Client
+	State                 *store.Store
+	Secrets               *store.SecretStore
+	Factory               provider.Factory
+	Activities            *activity.Manager
+	Metrics               *metrics.Manager
+	Workloads             workloadcache.Cache
+	Agents                *agent.Hub
+	Assets                fs.FS
+	AuthToken             string
+	Logger                *slog.Logger
+	Version               string
+	RemoteAgentsEnabled   bool
+	InvestigationsEnabled bool
+	HTTPClient            *http.Client
 }
 
 type Server struct {
-	state               *store.Store
-	secrets             *store.SecretStore
-	factory             provider.Factory
-	activities          *activity.Manager
-	metrics             *metrics.Manager
-	workloads           workloadcache.Cache
-	agents              *agent.Hub
-	auth                *auth
-	assets              fs.FS
-	logger              *slog.Logger
-	version             string
-	remoteAgentsEnabled bool
-	httpClient          *http.Client
+	state                 *store.Store
+	secrets               *store.SecretStore
+	factory               provider.Factory
+	activities            *activity.Manager
+	metrics               *metrics.Manager
+	workloads             workloadcache.Cache
+	agents                *agent.Hub
+	auth                  *auth
+	assets                fs.FS
+	logger                *slog.Logger
+	version               string
+	remoteAgentsEnabled   bool
+	investigationsEnabled bool
+	httpClient            *http.Client
 }
 
 func New(config Config) (*Server, error) {
@@ -62,19 +64,20 @@ func New(config Config) (*Server, error) {
 		config.HTTPClient = &http.Client{Timeout: 8 * time.Second}
 	}
 	return &Server{
-		state:               config.State,
-		secrets:             config.Secrets,
-		factory:             config.Factory,
-		activities:          config.Activities,
-		metrics:             config.Metrics,
-		workloads:           config.Workloads,
-		agents:              config.Agents,
-		auth:                newAuth(config.AuthToken),
-		assets:              config.Assets,
-		logger:              config.Logger,
-		version:             config.Version,
-		remoteAgentsEnabled: config.RemoteAgentsEnabled,
-		httpClient:          config.HTTPClient,
+		state:                 config.State,
+		secrets:               config.Secrets,
+		factory:               config.Factory,
+		activities:            config.Activities,
+		metrics:               config.Metrics,
+		workloads:             config.Workloads,
+		agents:                config.Agents,
+		auth:                  newAuth(config.AuthToken),
+		assets:                config.Assets,
+		logger:                config.Logger,
+		version:               config.Version,
+		remoteAgentsEnabled:   config.RemoteAgentsEnabled,
+		investigationsEnabled: config.InvestigationsEnabled,
+		httpClient:            config.HTTPClient,
 	}, nil
 }
 
@@ -188,7 +191,8 @@ func (s *Server) handleMeta(w http.ResponseWriter, _ *http.Request) {
 		"version":       s.version,
 		"auth_required": s.auth.required(),
 		"features": map[string]bool{
-			"remote_agents": s.remoteAgentsEnabled,
+			"investigations": s.investigationsEnabled,
+			"remote_agents":  s.remoteAgentsEnabled,
 		},
 	})
 }

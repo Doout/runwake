@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net"
@@ -102,5 +103,41 @@ func TestShutdownCancelsServerRequestContext(t *testing.T) {
 	case <-requestContext.Done():
 	case <-time.After(100 * time.Millisecond):
 		t.Fatal("server request context remained active after shutdown")
+	}
+}
+
+func TestStartExposesInvestigationsFeatureFlag(t *testing.T) {
+	running, err := Start(context.Background(), ServerConfig{
+		Listen:                "127.0.0.1:0",
+		DataDir:               t.TempDir(),
+		InvestigationsEnabled: true,
+		Logger:                slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		_ = running.Shutdown(shutdownCtx)
+	})
+
+	request, err := http.NewRequestWithContext(context.Background(), http.MethodGet, running.URL+"/api/v1/meta", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = response.Body.Close() }()
+	var result struct {
+		Features map[string]bool `json:"features"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		t.Fatal(err)
+	}
+	if !result.Features["investigations"] {
+		t.Fatalf("unexpected features: %#v", result.Features)
 	}
 }

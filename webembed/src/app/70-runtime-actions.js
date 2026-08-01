@@ -124,6 +124,98 @@
     modalRoot.querySelector("[autofocus]")?.focus();
   }
 
+  function selectedDockerRuntimeTargets() {
+    return selectedWorkloadItems()
+      .filter(item => item.platform === "docker" && item.uid && canManageDockerConnection(item.connection_id))
+      .map(item => ({ key: metricKey(item), connectionID: item.connection_id, containerID: item.uid, name: item.name }));
+  }
+
+  function showSelectedDockerContainersConfirmation(operation) {
+    const selectedItems = selectedWorkloadItems();
+    const targets = selectedDockerRuntimeTargets();
+    if (!targets.length || targets.length !== selectedItems.length || selectedItems.length !== state.selectedWorkloads.size) {
+      toast("Select only containers from Docker connections with Manage containers enabled.", "error");
+      return;
+    }
+    const deleting = operation === "delete";
+    const count = targets.length;
+    const titleID = `${operation}-selected-containers-title`;
+    closeTopologyContextMenu();
+    showModal(`<div class="modal-header">
+        <div><h2 id="${titleID}" class="modal-title">${deleting ? "Delete" : "Restart"} ${count} container${count === 1 ? "" : "s"}?</h2><p class="modal-copy">${deleting ? "Docker will force-remove every selected container. This cannot be undone." : "Docker will stop and start every selected container."}</p></div>
+        <button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="${deleting ? "remove-confirmation" : "runtime-action-confirmation"}">
+          <span class="${deleting ? "remove-confirmation-mark" : "runtime-action-mark"}" aria-hidden="true">${deleting ? "!" : "↻"}</span>
+          <div><strong>${count} selected container${count === 1 ? "" : "s"}</strong><p>${deleting ? "Running containers will be stopped first. Compose tooling may recreate them later." : "Traffic may be interrupted while the containers restart. Their restart policies remain unchanged."}</p></div>
+        </div>
+        <ul class="bulk-runtime-targets" aria-label="Selected containers">${targets.map(target => `<li>${html(target.name)}</li>`).join("")}</ul>
+        <div id="docker-action-error" class="notice error remove-error" role="alert" hidden></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" data-action="close-modal" autofocus>Cancel</button>
+        <button class="btn ${deleting ? "destructive" : "primary"}" data-action="confirm-${operation}-selected-containers">${deleting ? "Delete" : "Restart"} ${count} container${count === 1 ? "" : "s"}</button>
+      </div>`, "confirm-modal");
+    modalRoot.querySelector(".modal")?.setAttribute("aria-labelledby", titleID);
+    modalRoot.querySelector("[autofocus]")?.focus();
+  }
+
+  async function performSelectedDockerRuntimeAction(button, operation) {
+    if (!button) return;
+    const targets = selectedDockerRuntimeTargets();
+    if (!targets.length || targets.length !== selectedWorkloadItems().length || targets.length !== state.selectedWorkloads.size) {
+      closeModal();
+      toast("The selection changed. Select the containers again.", "error");
+      return;
+    }
+    const deleting = operation === "delete";
+    const modalButtons = [...modalRoot.querySelectorAll("button")];
+    const errorNotice = document.getElementById("docker-action-error");
+    modalButtons.forEach(item => { item.disabled = true; });
+    if (errorNotice) {
+      errorNotice.hidden = true;
+      errorNotice.textContent = "";
+    }
+    const succeeded = [];
+    const failed = [];
+    for (let index = 0; index < targets.length; index += 1) {
+      const target = targets[index];
+      button.textContent = `${deleting ? "Deleting" : "Restarting"} ${index + 1}/${targets.length}…`;
+      try {
+        const path = `/api/v1/connections/${encodeURIComponent(target.connectionID)}/docker/containers/${encodeURIComponent(target.containerID)}${deleting ? "?force=true" : "/restart"}`;
+        await api(path, { method: deleting ? "DELETE" : "POST" });
+        succeeded.push(target);
+        state.selectedWorkloads.delete(target.key);
+        if (deleting) {
+          state.workloads = state.workloads.filter(item => item.uid !== target.containerID || item.connection_id !== target.connectionID);
+        }
+      } catch (error) {
+        if (error instanceof AuthenticationRequired) throw error;
+        failed.push({ target, error });
+      }
+    }
+    const connectionIDs = [...new Set(succeeded.map(target => target.connectionID))];
+    for (const connectionID of connectionIDs) {
+      state.workloadCachedConnections.delete(connectionID);
+      state.workloadPendingConnections.add(connectionID);
+    }
+    if (connectionIDs.length && routeInfo().path === "/workloads") refreshWorkloads(connectionIDs);
+    if (!failed.length) {
+      closeModal();
+      toast(`${succeeded.length} container${succeeded.length === 1 ? "" : "s"} ${deleting ? "deleted" : "restarted"}`);
+      return;
+    }
+    updateWorkloadSelectionBar();
+    if (errorNotice) {
+      errorNotice.textContent = `${failed.length} container${failed.length === 1 ? "" : "s"} failed: ${failed.map(item => `${item.target.name} — ${item.error.message}`).join("; ")}`;
+      errorNotice.hidden = false;
+    }
+    modalButtons.forEach(item => { item.disabled = false; });
+    button.textContent = `Retry ${failed.length}`;
+    toast(`${succeeded.length} completed · ${failed.length} failed`, "error");
+  }
+
   async function performDockerRuntimeAction(button, options) {
     if (!button) return;
     const errorNotice = document.getElementById("docker-action-error");
@@ -305,6 +397,7 @@
       return;
     }
     const workload = event.target.closest("[data-workload]");
+    if (event.target.closest(".workload-select-cell")) return;
     if (workload && !event.target.closest("[data-action], input, button, a, select, textarea")) {
       const request = JSON.parse(decodeURIComponent(workload.dataset.workload));
       navigate(`/activity?${new URLSearchParams(request).toString()}`);
@@ -314,6 +407,7 @@
     if (!target) return;
     const action = target.dataset.action;
     if (action !== "toggle-connection-menu") closeConnectionMenus();
+    if (!investigationsAvailable() && INVESTIGATION_ACTIONS.has(action)) return;
     try {
       switch (action) {
         case "add-connection":
@@ -477,6 +571,18 @@
         case "clear-workload-selection":
           state.selectedWorkloads.clear();
           updateWorkloadSelectionBar();
+          break;
+        case "restart-selected-containers":
+          showSelectedDockerContainersConfirmation("restart");
+          break;
+        case "delete-selected-containers":
+          showSelectedDockerContainersConfirmation("delete");
+          break;
+        case "confirm-restart-selected-containers":
+          await performSelectedDockerRuntimeAction(target, "restart");
+          break;
+        case "confirm-delete-selected-containers":
+          await performSelectedDockerRuntimeAction(target, "delete");
           break;
         case "open-selected-logs": openSelectedLogs(); break;
         case "refresh-workloads":
@@ -817,7 +923,7 @@
     if (selection.checked) {
       if (state.selectedWorkloads.size >= 12) {
         selection.checked = false;
-        toast("Merged logs support up to 12 workloads at once.", "error");
+        toast("Select up to 12 workloads at once.", "error");
         return;
       }
       state.selectedWorkloads.add(selection.dataset.selectWorkload);
