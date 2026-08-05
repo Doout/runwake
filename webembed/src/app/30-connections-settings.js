@@ -18,7 +18,7 @@
     });
     const attention = availableConnections.filter(item => ["bad", "warn"].includes(connectionStatusClass(item.status?.state))).length;
     shell(`<section class="page connections-page">
-      <header class="page-header"><div><h1 class="page-title">Connections</h1></div><div class="header-actions"><button class="btn primary" data-action="add-connection">Add connection</button></div></header>
+      <header class="page-header"><div><h1 class="page-title">Connections</h1></div><div class="header-actions"><button type="button" class="btn primary" data-action="add-connection">Add connection</button></div></header>
       ${availableConnections.length ? `
         <div class="connection-status-strip" aria-label="Connection overview">
           <span><strong>${availableConnections.length}</strong> configured</span>
@@ -262,8 +262,8 @@
 
   function settingsTabs(active) {
     return `<nav class="view-tabs settings-tabs" aria-label="Settings sections">
-      <button class="view-tab ${active === "general" ? "active" : ""}" data-action="settings-tab" data-tab="general">General</button>
-      <button class="view-tab ${active === "ssh" ? "active" : ""}" data-action="settings-tab" data-tab="ssh">SSH profiles <span class="tab-count">${state.sshProfiles.length}</span></button>
+      <button type="button" class="view-tab ${active === "general" ? "active" : ""}" data-action="settings-tab" data-tab="general">General</button>
+      <button type="button" class="view-tab ${active === "ssh" ? "active" : ""}" data-action="settings-tab" data-tab="ssh">SSH profiles <span class="tab-count">${state.sshProfiles.length}</span></button>
     </nav>`;
   }
 
@@ -288,7 +288,7 @@
     shell(`<section class="page settings-page">
       <header class="page-header">
         <div><h1 class="page-title">Settings</h1></div>
-        <div class="header-actions"><button class="btn primary" data-action="add-ssh-profile">New profile</button></div>
+        <div class="header-actions"><button type="button" class="btn primary" data-action="add-ssh-profile">New profile</button></div>
       </header>
       ${settingsTabs("ssh")}
       <section class="ssh-profile-registry" aria-label="Saved SSH profiles">
@@ -300,7 +300,7 @@
           <div class="ssh-profile-empty">
             <span class="ssh-profile-empty-mark" aria-hidden="true">SSH</span>
             <div><strong>No SSH profiles yet</strong><p>Create one here or while adding a connection.</p></div>
-            <button class="btn" data-action="add-ssh-profile">Create profile</button>
+            <button type="button" class="btn" data-action="add-ssh-profile">Create profile</button>
           </div>`}
       </section>
     </section>`, "settings");
@@ -313,7 +313,7 @@
       <span class="ssh-profile-mark" aria-hidden="true">S</span>
       <div class="ssh-profile-identity"><strong>${html(profile.name)}</strong><small class="mono">${html(sshProfileTarget(profile))}</small></div>
       <div class="ssh-profile-meta"><span>${auth}</span><span>${verification}</span>${profile.proxy_jump ? `<span>via ${html(profile.proxy_jump)}</span>` : ""}</div>
-      <div class="ssh-profile-actions"><button class="btn small" data-action="test-ssh-profile" data-id="${html(profile.id)}">Test</button><button class="btn small danger" data-action="delete-ssh-profile" data-id="${html(profile.id)}">Remove</button></div>
+      <div class="ssh-profile-actions"><button type="button" class="btn small" data-action="test-ssh-profile" data-id="${html(profile.id)}">Test</button><button type="button" class="btn small danger" data-action="delete-ssh-profile" data-id="${html(profile.id)}">Remove</button></div>
     </article>`;
   }
 
@@ -324,9 +324,9 @@
   }
 
   function showSSHProfileModal() {
-    showModal(`<div class="modal-header"><div><h2 class="modal-title">New SSH profile</h2></div><button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div>
+    showModal(`<div class="modal-header"><div><h2 class="modal-title">New SSH profile</h2></div><button type="button" class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div>
       <div class="modal-body"><form id="ssh-profile-form">${sshProfileEditorFields()}</form></div>
-      <div class="modal-footer"><button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="save-ssh-profile">Save</button></div>`);
+      <div class="modal-footer"><button type="button" class="btn" data-action="close-modal">Cancel</button><button type="button" class="btn primary" data-action="save-ssh-profile">Save</button></div>`);
     document.querySelector('#ssh-profile-form [name="name"]')?.focus();
   }
 

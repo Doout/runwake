@@ -7,16 +7,40 @@ colors:
   instrument-surface: "#12171d"
   raised-surface: "#171d24"
   active-surface: "#1c232c"
+  instrument-header: "#101419"
+  menu-surface: "#151b22"
   divider-steel: "#29323d"
   strong-steel: "#3b4857"
+  soft-divider: "#242c35"
   primary-text: "#f4f6f8"
   secondary-text: "#98a3af"
   quiet-text: "#7f8a96"
+  softened-data: "#cbd3db"
   signal-blue: "#75aaf5"
   action-blue: "#3579d2"
+  action-boundary: "#426a99"
+  selected-text: "#d5e7ff"
+  text-on-accent: "#ffffff"
   healthy-green: "#61cc98"
+  success-border: "#28543f"
+  success-text: "#afe5ca"
   caution-amber: "#e4b55e"
+  warning-border: "#5b4725"
+  warning-surface: "#211a0f"
+  warning-text: "#efce8e"
   failure-red: "#ed7e85"
+  failure-border: "#713a43"
+  failure-surface: "#411f25"
+  failure-surface-hover: "#52262e"
+  failure-text: "#f0b0b5"
+  info-border: "#3b597b"
+  info-surface: "#172237"
+  info-text: "#b7d4fa"
+  evidence-canvas: "#0b0f13"
+  evidence-surface: "#0d1116"
+  evidence-hover: "#141a21"
+  evidence-text: "#dce2e8"
+  evidence-muted: "#b7c0ca"
 typography:
   headline:
     fontFamily: "ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif"
@@ -49,6 +73,7 @@ rounded:
   control: "7px"
   surface: "10px"
   overlay: "12px"
+  pill: "999px"
 spacing:
   xs: "4px"
   sm: "8px"
@@ -149,7 +174,7 @@ The palette is a cool near-black instrument housing with steel dividers, ice-blu
 
 The desktop shell uses a fixed navigation rail and a bounded content canvas. Operate surfaces use a stable instrument layout: a compact header, a persistent command or filter strip, and a dominant evidence region. Settings groups follow user frequency rather than backend ownership. Connections use registry rows so names, routes, state, and actions align vertically.
 
-Spacing follows a compact 4/8/12/16/24 rhythm. Responsive behavior is structural: navigation collapses, action strips wrap, registries become stacked records, and secondary inspectors move below the main evidence. Controls do not resize merely because their state changes.
+Spacing follows a compact 4/8/12/16/24 rhythm. Responsive behavior is structural: navigation collapses, action strips wrap, registries become stacked records, and secondary inspectors move below the main evidence. Controls do not resize merely because their state changes. On phone layouts, primary controls and navigation use 44–48px touch targets while compact secondary evidence tools never fall below 36px.
 
 **The Fixed Position Rule.** State changes update content and signals in place; they do not move the operator's next action.
 
@@ -175,6 +200,7 @@ Controls use compact 7px corners, working surfaces use 10px corners, and protect
 - **Primary:** Action blue, white text, used once per decision region.
 - **Hover / Focus:** Tonal lift on hover and a two-pixel signal-blue focus outline.
 - **Secondary / Ghost:** Steel-bordered raised surface or transparent text action.
+- **Phone geometry:** Primary and modal actions expand to a 44px minimum target without changing their label or visual priority.
 
 ### Chips
 
@@ -194,6 +220,11 @@ Controls use compact 7px corners, working surfaces use 10px corners, and protect
 - **Style:** Dark instrument surface, steel border, 7px radius.
 - **Focus:** Signal-blue outline with no layout shift.
 - **Error / Disabled:** Error copy states recovery; disabled controls remain legible and explain their gate.
+- **Placeholder:** Quiet Text is the minimum placeholder tone so instructional text remains at least 4.5:1 against the instrument surface.
+
+### Protected Overlays
+
+Dialogs have an accessible name, trap keyboard focus, make the application background inert, close with Escape, and return focus to the invoking control. Dialog content scrolls within the protected overlay while the page behind it remains fixed.
 
 ### Searchable Dropdowns / Comboboxes
 
@@ -235,6 +266,8 @@ Workload discovery remains progressive even for five-figure inventories. Large i
 - **Do** preserve the user's place when live data arrives or a filter changes.
 - **Do** show exact counts, active filters, and recovery paths.
 - **Do** make every state and action reachable by keyboard.
+- **Do** honor reduced-motion preferences by removing repeated pulses and shortening non-essential transitions.
+- **Do** give every generated button an explicit type and every protected overlay a complete focus lifecycle.
 
 ### Don't:
 

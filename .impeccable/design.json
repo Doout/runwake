@@ -1,11 +1,17 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-07-28T01:40:52Z",
+  "generatedAt": "2026-08-05T22:56:30Z",
   "title": "Design System: Runwake",
   "extensions": {
     "colorMeta": {
       "canvas-night": { "role": "neutral", "displayName": "Canvas Night", "canonical": "#0c0f13", "tonalRamp": ["#0c0f13", "#161b22", "#232a34", "#343e4b", "#596675", "#85909b", "#bac1c8", "#eef1f4"] },
+      "instrument-header": { "role": "neutral", "displayName": "Instrument Header", "canonical": "#101419", "tonalRamp": ["#101419", "#1a2027", "#29313b", "#3b4653", "#5e6b79", "#87929d", "#bdc4ca", "#f0f2f4"] },
+      "menu-surface": { "role": "neutral", "displayName": "Menu Surface", "canonical": "#151b22", "tonalRamp": ["#151b22", "#202832", "#303b48", "#445260", "#687583", "#909aa4", "#c2c8cd", "#f2f4f5"] },
+      "soft-divider": { "role": "neutral", "displayName": "Soft Divider", "canonical": "#242c35", "tonalRamp": ["#151a20", "#242c35", "#35404c", "#4a5867", "#6d7986", "#969fa8", "#c6cbd0", "#f3f4f5"] },
+      "softened-data": { "role": "neutral", "displayName": "Softened Data", "canonical": "#cbd3db", "tonalRamp": ["#17202a", "#293847", "#43576a", "#63788b", "#879aaa", "#aebbc6", "#cbd3db", "#f4f7f9"] },
       "signal-blue": { "role": "primary", "displayName": "Signal Blue", "canonical": "#75aaf5", "tonalRamp": ["#0d1b2e", "#15345d", "#245694", "#3579d2", "#75aaf5", "#9ec3f8", "#c8ddfb", "#edf5ff"] },
+      "action-boundary": { "role": "primary", "displayName": "Action Boundary", "canonical": "#426a99", "tonalRamp": ["#101b28", "#1b3048", "#2b4a6e", "#426a99", "#6b8fb8", "#97b2cf", "#c5d6e6", "#eff6fc"] },
+      "selected-text": { "role": "primary", "displayName": "Selected Text", "canonical": "#d5e7ff", "tonalRamp": ["#112036", "#1d3c65", "#315d92", "#4f83c0", "#7eabe2", "#accbf1", "#d5e7ff", "#f5faff"] },
       "healthy-green": { "role": "secondary", "displayName": "Healthy Green", "canonical": "#61cc98", "tonalRamp": ["#0d2118", "#153d2b", "#226044", "#35875f", "#61cc98", "#91ddb5", "#c0edda", "#edfaf4"] },
       "caution-amber": { "role": "secondary", "displayName": "Caution Amber", "canonical": "#e4b55e", "tonalRamp": ["#251b09", "#483411", "#72521d", "#9d762d", "#e4b55e", "#edca87", "#f5dfb2", "#fcf5e7"] },
       "failure-red": { "role": "secondary", "displayName": "Failure Red", "canonical": "#ed7e85", "tonalRamp": ["#2b1014", "#541e26", "#832f3a", "#b94b55", "#ed7e85", "#f2a6ab", "#f7cdd0", "#fdf0f1"] }
@@ -16,11 +22,14 @@
       "data": { "displayName": "Runtime Data", "purpose": "Logs, paths, commands, IDs, and measurements." }
     },
     "shadows": [
-      { "name": "overlay", "value": "0 24px 70px rgba(0, 0, 0, .42)", "purpose": "Only for dialogs, tooltips, and toasts that leave the page plane." }
+      { "name": "overlay", "value": "0 24px 70px rgba(0, 0, 0, .42)", "purpose": "Only for dialogs, tooltips, and toasts that leave the page plane." },
+      { "name": "menu", "value": "0 18px 42px rgba(0, 0, 0, .54)", "purpose": "Detached searchable menus and action menus." },
+      { "name": "popover", "value": "0 14px 36px rgba(0, 0, 0, .36)", "purpose": "Compact filtering and formatting popovers." }
     ],
     "motion": [
       { "name": "state-fast", "value": "150ms ease-out", "purpose": "Hover, selection, and compact disclosure changes." },
-      { "name": "state-standard", "value": "220ms cubic-bezier(.2,.8,.2,1)", "purpose": "Inspector and toolbar state changes." }
+      { "name": "state-standard", "value": "220ms cubic-bezier(.2,.8,.2,1)", "purpose": "Inspector and toolbar state changes." },
+      { "name": "reduced-motion", "value": ".01ms", "purpose": "Removes repeated pulses and non-essential transitions when reduced motion is requested." }
     ],
     "breakpoints": [
       { "name": "compact-rail", "value": "900px" },

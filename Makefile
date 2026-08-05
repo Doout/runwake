@@ -70,6 +70,7 @@ check: format-check test vet lint
 	node webembed/navigation_test.js
 	node --check webembed/dist/terminal-text.js
 	node webembed/terminal_text_test.js
+	node webembed/source_contract_test.js
 
 web-build:
 	./scripts/build-web.sh

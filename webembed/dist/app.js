@@ -87,6 +87,21 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     "pin-selected-record",
     "pin-latest-metric",
   ]);
+  const actionHandlerRegistry = new Map();
+
+  function registerActionHandler(domain, actions, handler) {
+    for (const action of actions) {
+      if (actionHandlerRegistry.has(action)) throw new Error(`Duplicate UI action registration: ${action}`);
+      actionHandlerRegistry.set(action, { domain, handler });
+    }
+  }
+
+  async function dispatchAction(action, context) {
+    const registration = actionHandlerRegistry.get(action);
+    if (!registration) return false;
+    await registration.handler(action, context);
+    return true;
+  }
 
   class AuthenticationRequired extends Error {}
 
@@ -471,7 +486,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
       <section class="page workloads-page" aria-busy="${state.workloadRefreshing}">
         <header class="page-header workloads-header">
           <div><h1 class="page-title">Workloads</h1></div>
-          <div class="header-actions workload-header-actions">${state.connections.length ? `<button class="btn workload-header-action" data-action="save-workload-view" aria-label="Save workload view" title="Save workload view"><span class="workload-action-symbol" aria-hidden="true">☆</span><span class="workload-action-label">Save view</span></button>` : ""}<button id="refresh-workloads" class="btn workload-header-action" data-action="refresh-workloads" aria-label="${html(workloadRefreshTitle())}" title="${html(workloadRefreshTitle())}" ${state.workloadRefreshing ? "disabled" : ""}><span class="workload-action-symbol workload-refresh-symbol" aria-hidden="true">↻</span><span class="workload-action-label">${html(workloadRefreshLabel())}</span></button><button class="btn primary workload-header-action" data-action="add-connection" aria-label="Add connection" title="Add connection"><span class="workload-action-symbol" aria-hidden="true">＋</span><span class="workload-action-label">Add connection</span></button></div>
+          <div class="header-actions workload-header-actions">${state.connections.length ? `<button type="button" class="btn workload-header-action" data-action="save-workload-view" aria-label="Save workload view" title="Save workload view"><span class="workload-action-symbol" aria-hidden="true">☆</span><span class="workload-action-label">Save view</span></button>` : ""}<button type="button" id="refresh-workloads" class="btn workload-header-action" data-action="refresh-workloads" aria-label="${html(workloadRefreshTitle())}" title="${html(workloadRefreshTitle())}" ${state.workloadRefreshing ? "disabled" : ""}><span class="workload-action-symbol workload-refresh-symbol" aria-hidden="true">↻</span><span class="workload-action-label">${html(workloadRefreshLabel())}</span></button><button type="button" class="btn primary workload-header-action" data-action="add-connection" aria-label="Add connection" title="Add connection"><span class="workload-action-symbol" aria-hidden="true">＋</span><span class="workload-action-label">Add connection</span></button></div>
         </header>
         <div id="workload-errors">${workloadErrorNotice()}</div>
         <div id="metrics-availability">${metricsAvailability()}</div>
@@ -529,56 +544,6 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     });
   }
 
-  function investigationEvidenceLabel(item) {
-    const payload = item.payload || {};
-    if (item.kind === "metric") return `${payload.name || "Metric"} · ${formatTime(payload.timestamp)}`;
-    const message = String(payload.message || payload.summary || item.kind).replace(/\s+/g, " ").trim();
-    return `${item.kind} · ${message.slice(0, 110)}`;
-  }
-
-  function investigationTimeline(session) {
-    const items = [...(session.evidence || [])].sort((a, b) => new Date(a.payload?.timestamp || a.pinnedAt) - new Date(b.payload?.timestamp || b.pinnedAt));
-    if (!items.length) return `<div class="investigation-empty">Pin a log record, runtime event, or metric sample while inspecting a workload.</div>`;
-    return `<ol class="investigation-timeline">${items.map(item => `<li><time>${html(formatTime(item.payload?.timestamp || item.pinnedAt, true))}</time><span class="evidence-kind">${html(item.kind)}</span><strong>${html(investigationEvidenceLabel(item).replace(/^\w+ · /, ""))}</strong><small>${html(item.payload?.workload || item.payload?.name || item.payload?.source || "")}</small></li>`).join("")}</ol>`;
-  }
-
-  function renderInvestigations() {
-    if (!investigationsAvailable()) return navigate("/workloads");
-    const sessions = state.personal.sessions || [];
-    const active = activeInvestigation();
-    const viewed = active || sessions.find(item => item.id === state.viewingSessionID && item.readOnly);
-    shell(`<section class="page investigations-page">
-      <header class="page-header"><div><h1 class="page-title">Investigations</h1><p class="page-description">Local evidence only. Nothing on this page is stored by the Runwake server.</p></div><div class="header-actions"><label class="btn file-button">Import<input id="investigation-import" type="file" accept="application/json,.json" hidden></label>${active ? `<button class="btn" data-action="close-investigation" data-id="${html(active.id)}">Finish current</button>` : `<button class="btn primary" data-action="new-investigation">New investigation</button>`}</div></header>
-      ${viewed ? `<section class="investigation-workbench">
-        <div class="investigation-heading"><div><span class="live-signal ${viewed.readOnly ? "readonly" : ""}" aria-hidden="true"></span><input id="investigation-name" class="investigation-name" value="${html(viewed.name)}" aria-label="Investigation name" ${viewed.readOnly ? "readonly" : ""}></div><span>${viewed.readOnly ? "Imported read-only · " : ""}${viewed.evidence.length} pinned · updated ${html(relativeTime(viewed.updatedAt))}</span></div>
-        <div class="investigation-layout"><div>${investigationTimeline(viewed)}</div><aside><label>Notes<textarea id="investigation-notes" class="field" rows="10" placeholder="Record what you observed, not a guessed cause." ${viewed.readOnly ? "readonly" : ""}>${html(viewed.notes)}</textarea></label><div class="investigation-actions"><button class="btn" data-action="export-investigation" data-id="${html(viewed.id)}">Export evidence</button>${viewed.readOnly ? "" : `<button class="btn ghost" data-action="configure-handoffs">Handoffs</button>`}</div></aside></div>
-      </section>` : `<div class="investigation-empty-state"><span aria-hidden="true">◎</span><h2>No active investigation</h2><p>Start one before opening live evidence, or import a bundle created earlier.</p><button class="btn primary" data-action="new-investigation">Start investigation</button></div>`}
-      ${sessions.length ? `<section class="investigation-history"><div class="section-head"><h2 class="section-title">Local history</h2><span class="hint">Latest ${sessions.length} sessions</span></div><div class="investigation-list">${sessions.map(session => `<article><button type="button" data-action="activate-investigation" data-id="${html(session.id)}"><span class="status ${session.status === "active" ? "good" : "other"}">${html(session.status)}</span><strong>${html(session.name)}</strong><small>${session.evidence.length} pinned · ${html(relativeTime(session.updatedAt))}</small></button><div><button class="btn ghost small" data-action="export-investigation" data-id="${html(session.id)}">Export</button><button class="btn ghost small danger" data-action="delete-investigation" data-id="${html(session.id)}">Delete</button></div></article>`).join("")}</div></section>` : ""}
-    </section>`, "investigations");
-    bindInvestigationControls();
-  }
-
-  function bindInvestigationControls() {
-    const active = activeInvestigation();
-    const persist = debounce(() => {
-      if (!active) return;
-      personal.updateSession(state.personal, active.id, { name: document.getElementById("investigation-name")?.value, notes: document.getElementById("investigation-notes")?.value });
-      savePersonalState();
-    }, 220);
-    document.getElementById("investigation-name")?.addEventListener("input", persist);
-    document.getElementById("investigation-notes")?.addEventListener("input", persist);
-    document.getElementById("investigation-import")?.addEventListener("change", async event => {
-      const file = event.target.files?.[0];
-      if (!file) return;
-      try {
-        const session = personal.importBundle(state.personal, await file.text());
-        savePersonalState(`${session.name} imported`);
-        renderInvestigations();
-      } catch (error) {
-        toast(`Import failed: ${error.message}`, "error");
-      }
-    });
-  }
 
   function renderWorkloadFilterMenu(inputID, filter, label, options, selected, multiple = false) {
     const menuID = `${inputID}-menu`;
@@ -1262,6 +1227,145 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     if (total) total.textContent = workloadResultTotal(items.length);
     if (actions) actions.innerHTML = workloadResultActions();
   }
+  function metricCPUCell(metric) {
+    return `<div class="metric-cell">${html(formatCPU(metric))}</div><div class="cell-subtitle">${metric ? html(formatTime(metric.timestamp)) : html(workloadMetricPlaceholder())}</div>`;
+  }
+
+  function metricMemoryCell(metric) {
+    return `<div class="metric-cell">${html(formatMemory(metric))}</div><div class="cell-subtitle">${metric?.memory_limit_bytes ? "usage / limit" : metric ? "working set" : html(workloadMetricPlaceholder())}</div>`;
+  }
+
+  function workloadMetricPlaceholder() {
+    if (state.workloadMetricsLoading) return "Loading…";
+    if (state.workloadMetricsDeferred) return "Not loaded";
+    if (state.workloadMetricsLoaded) return "No sample";
+    return "After discovery";
+  }
+
+  function metricKey(item) {
+    return [item.connection_id || "", item.namespace || "", item.kind || "", item.name || ""].join("|");
+  }
+
+  function formatCPU(metric) {
+    if (!metric || metric.error) return "—";
+    if (metric.cpu_percent !== undefined && metric.cpu_percent !== null) return `${Number(metric.cpu_percent).toFixed(metric.cpu_percent >= 10 ? 1 : 2)}%`;
+    const millicores = Number(metric.cpu_cores || 0) * 1000;
+    return millicores >= 1000 ? `${(millicores / 1000).toFixed(2)} cores` : `${millicores.toFixed(millicores >= 10 ? 0 : 1)}m`;
+  }
+
+  function formatBytes(value) {
+    const bytes = Number(value || 0);
+    if (!Number.isFinite(bytes) || bytes <= 0) return "—";
+    const units = ["B", "KiB", "MiB", "GiB", "TiB"];
+    let current = bytes;
+    let index = 0;
+    while (current >= 1024 && index < units.length - 1) { current /= 1024; index += 1; }
+    return `${current.toFixed(current >= 100 || index === 0 ? 0 : current >= 10 ? 1 : 2)} ${units[index]}`;
+  }
+
+  function formatMemory(metric) {
+    if (!metric || metric.error) return "—";
+    const usage = formatBytes(metric.memory_bytes);
+    return metric.memory_limit_bytes ? `${usage} / ${formatBytes(metric.memory_limit_bytes)}` : usage;
+  }
+
+  function statusBucket(item) {
+    const value = `${item.severity || ""} ${item.state || ""}`.toLowerCase();
+    if (/error|failed|failure|degraded|unhealthy|crash|terminated/.test(value)) return "bad";
+    if (/warning|pending|restart|progress|unknown|notready|not ready/.test(value)) return "warn";
+    if (/healthy|ready|running|available|active|created/.test(value)) return "good";
+    return "other";
+  }
+
+  function emptyState(title, copy, button, action) {
+    return `<div class="empty"><div class="empty-inner"><div class="empty-symbol" aria-hidden="true">◇</div><h2>${html(title)}</h2><p>${html(copy)}</p>${button ? `<button type="button" class="btn primary" data-action="${html(action)}">${html(button)}</button>` : ""}</div></div>`;
+  }
+
+  function bindWorkloadControls() {
+    bindWorkloadViewport();
+    const search = document.getElementById("workload-search");
+    if (search) search.addEventListener("input", debounce(() => {
+      state.filters.search = search.value;
+      state.workloadBrowseMode = "auto";
+      updateWorkloadView(true);
+    }, 120));
+    [["connection-filter", "connection"], ["namespace-filter", "namespace"], ["status-filter", "status"]].forEach(([id, key]) => {
+      document.getElementById(id)?.addEventListener("change", event => {
+        state.filters[key] = ["connection", "namespace"].includes(key)
+          ? filterInputValues(event.target.value)
+          : event.target.value;
+        state.workloadBrowseMode = "auto";
+        updateWorkloadView(true);
+      });
+    });
+    document.querySelectorAll(".workload-filter-menu [data-log-menu-search]").forEach(input => {
+      input.addEventListener("input", event => filterLogMenuOptions(event.target.closest(".log-menu-field"), event.target.value));
+    });
+  }
+
+  function syncWorkloadFilterControls() {
+    const search = document.getElementById("workload-search");
+    if (search) search.value = state.filters.search;
+    updateWorkloadFilterMenu("connection", state.filters.connection);
+    updateWorkloadFilterMenu("namespace", state.filters.namespace);
+    updateWorkloadFilterMenu("status", state.filters.status);
+  }
+
+  function updateWorkloadFilterMenu(filter, value) {
+    const field = document.querySelector(`[data-workload-filter="${filter}"]`);
+    if (!field) return;
+    const multiple = field.dataset.multiple === "true";
+    const input = field.querySelector("input[type=hidden]");
+    const options = [...field.querySelectorAll(".log-menu-option")];
+    const values = filterValues(value);
+    const selected = options.filter(option => option.dataset.value && values.includes(option.dataset.value));
+    const allOption = options.find(option => !option.dataset.value) || options[0];
+    const label = multiple && selected.length > 1
+      ? `${selected.length} ${filter === "connection" ? "connections" : "namespaces"}`
+      : selected[0]?.dataset.label || allOption?.dataset.label || allOption?.textContent?.trim() || "";
+    const fullLabel = selected.length ? selected.map(option => option.dataset.label).join(", ") : allOption?.dataset.label || "";
+    if (input) input.value = multiple ? JSON.stringify(values) : values[0] || "";
+    field.querySelector("[data-log-menu-label]")?.replaceChildren(document.createTextNode(label));
+    const trigger = field.querySelector(".log-menu-trigger");
+    if (trigger) {
+      const filterLabel = filter === "connection" ? "Connection" : filter === "namespace" ? "Namespace" : "State";
+      trigger.setAttribute("aria-label", `${filterLabel}: ${fullLabel}`);
+      trigger.title = fullLabel;
+    }
+    for (const option of options) {
+      const isSelected = option.dataset.value ? values.includes(option.dataset.value) : values.length === 0;
+      option.classList.toggle("selected", isSelected);
+      option.setAttribute("aria-selected", String(isSelected));
+    }
+    updateWorkloadFilterDraftSummary(field);
+  }
+
+  function filterInputValues(value) {
+    try {
+      const parsed = JSON.parse(value);
+      return filterValues(parsed);
+    } catch {
+      return filterValues(value);
+    }
+  }
+
+  function updateWorkloadFilterDraftSummary(field) {
+    const summary = field?.querySelector("[data-workload-selection-count]");
+    if (!summary) return;
+    const count = [...field.querySelectorAll(".log-menu-option.selected")].filter(option => option.dataset.value).length;
+    summary.textContent = count ? `${count} selected` : "All";
+  }
+
+  function resetWorkloadFilterDraft(field) {
+    if (!field || field.dataset.multiple !== "true") return;
+    const values = filterInputValues(field.querySelector("input[type=hidden]")?.value || "[]");
+    for (const option of field.querySelectorAll(".log-menu-option")) {
+      const selected = option.dataset.value ? values.includes(option.dataset.value) : values.length === 0;
+      option.classList.toggle("selected", selected);
+      option.setAttribute("aria-selected", String(selected));
+    }
+    updateWorkloadFilterDraftSummary(field);
+  }
 
   function renderTopology(params) {
     const renderID = ++state.topologyRenderID;
@@ -1292,14 +1396,14 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     shell(`<section class="page topology-page ${request.focus ? "topology-page-focused" : ""}">
       <header class="page-header topology-header">
         <div>
-          <button class="btn ghost small activity-back" data-action="back-workloads">← Workloads</button>
+          <button type="button" class="btn ghost small activity-back" data-action="back-workloads">← Workloads</button>
           <h1 class="page-title activity-title">${html(request.focus || request.project)}</h1>
           <div class="activity-meta"><button type="button" class="activity-meta-link" data-action="filter-workloads-from-topology" data-connection="${html(request.connection_id)}" aria-label="Show workloads from ${html(connectionLabel)}">${html(connectionLabel)}</button>${request.focus ? `<span>${html(request.project)}</span>` : ""}<span>Docker Compose</span><span>${managed ? "Manage containers" : "View only"}</span></div>
         </div>
         <div class="topology-header-actions">
-          ${request.focus ? `<button class="btn ghost" data-action="show-full-topology" data-connection="${html(request.connection_id)}" data-project="${html(request.project)}">Full project</button>` : ""}
-          ${!request.focus && managed ? `<button class="btn" data-action="restart-compose-project" data-connection="${html(request.connection_id)}" data-project="${html(request.project)}">Restart project</button>` : ""}
-          <button id="refresh-topology" class="btn" data-action="refresh-topology" data-connection="${html(request.connection_id)}" data-project="${html(request.project)}" data-focus="${html(request.focus)}" ${state.topologyRefreshing ? "disabled" : ""}>${state.topologyRefreshing ? "Refreshing…" : "Refresh"}</button>
+          ${request.focus ? `<button type="button" class="btn ghost" data-action="show-full-topology" data-connection="${html(request.connection_id)}" data-project="${html(request.project)}">Full project</button>` : ""}
+          ${!request.focus && managed ? `<button type="button" class="btn" data-action="restart-compose-project" data-connection="${html(request.connection_id)}" data-project="${html(request.project)}">Restart project</button>` : ""}
+          <button type="button" id="refresh-topology" class="btn" data-action="refresh-topology" data-connection="${html(request.connection_id)}" data-project="${html(request.project)}" data-focus="${html(request.focus)}" ${state.topologyRefreshing ? "disabled" : ""}>${state.topologyRefreshing ? "Refreshing…" : "Refresh"}</button>
         </div>
       </header>
       ${request.focus ? workloadViewTabs(activityRequest, "topology", model?.workloads.find(item => item.name === request.focus)) : ""}
@@ -1506,11 +1610,11 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
 
   function topologyControls() {
     return `<div class="topology-controls" aria-label="Topology controls">
-      <button class="btn small" data-action="toggle-all-topology-nodes" aria-pressed="false">Expand all</button>
+      <button type="button" class="btn small" data-action="toggle-all-topology-nodes" aria-pressed="false">Expand all</button>
       <div class="topology-zoom-controls" aria-label="Canvas zoom">
-        <button class="btn small icon-button" data-action="zoom-topology" data-zoom="-0.1" aria-label="Zoom out" title="Zoom out (−)">−</button>
-        <button id="topology-zoom-level" class="btn small topology-zoom-level" data-action="reset-topology-zoom" aria-label="Reset zoom to 100%" title="Reset zoom (0)">${Math.round(state.topologyZoom * 100)}%</button>
-        <button class="btn small icon-button" data-action="zoom-topology" data-zoom="0.1" aria-label="Zoom in" title="Zoom in (+)">+</button>
+        <button type="button" class="btn small icon-button" data-action="zoom-topology" data-zoom="-0.1" aria-label="Zoom out" title="Zoom out (−)">−</button>
+        <button type="button" id="topology-zoom-level" class="btn small topology-zoom-level" data-action="reset-topology-zoom" aria-label="Reset zoom to 100%" title="Reset zoom (0)">${Math.round(state.topologyZoom * 100)}%</button>
+        <button type="button" class="btn small icon-button" data-action="zoom-topology" data-zoom="0.1" aria-label="Zoom in" title="Zoom in (+)">+</button>
       </div>
     </div>`;
   }
@@ -1973,146 +2077,6 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     state.topologyDrawFrame = 0;
   }
 
-  function metricCPUCell(metric) {
-    return `<div class="metric-cell">${html(formatCPU(metric))}</div><div class="cell-subtitle">${metric ? html(formatTime(metric.timestamp)) : html(workloadMetricPlaceholder())}</div>`;
-  }
-
-  function metricMemoryCell(metric) {
-    return `<div class="metric-cell">${html(formatMemory(metric))}</div><div class="cell-subtitle">${metric?.memory_limit_bytes ? "usage / limit" : metric ? "working set" : html(workloadMetricPlaceholder())}</div>`;
-  }
-
-  function workloadMetricPlaceholder() {
-    if (state.workloadMetricsLoading) return "Loading…";
-    if (state.workloadMetricsDeferred) return "Not loaded";
-    if (state.workloadMetricsLoaded) return "No sample";
-    return "After discovery";
-  }
-
-  function metricKey(item) {
-    return [item.connection_id || "", item.namespace || "", item.kind || "", item.name || ""].join("|");
-  }
-
-  function formatCPU(metric) {
-    if (!metric || metric.error) return "—";
-    if (metric.cpu_percent !== undefined && metric.cpu_percent !== null) return `${Number(metric.cpu_percent).toFixed(metric.cpu_percent >= 10 ? 1 : 2)}%`;
-    const millicores = Number(metric.cpu_cores || 0) * 1000;
-    return millicores >= 1000 ? `${(millicores / 1000).toFixed(2)} cores` : `${millicores.toFixed(millicores >= 10 ? 0 : 1)}m`;
-  }
-
-  function formatBytes(value) {
-    const bytes = Number(value || 0);
-    if (!Number.isFinite(bytes) || bytes <= 0) return "—";
-    const units = ["B", "KiB", "MiB", "GiB", "TiB"];
-    let current = bytes;
-    let index = 0;
-    while (current >= 1024 && index < units.length - 1) { current /= 1024; index += 1; }
-    return `${current.toFixed(current >= 100 || index === 0 ? 0 : current >= 10 ? 1 : 2)} ${units[index]}`;
-  }
-
-  function formatMemory(metric) {
-    if (!metric || metric.error) return "—";
-    const usage = formatBytes(metric.memory_bytes);
-    return metric.memory_limit_bytes ? `${usage} / ${formatBytes(metric.memory_limit_bytes)}` : usage;
-  }
-
-  function statusBucket(item) {
-    const value = `${item.severity || ""} ${item.state || ""}`.toLowerCase();
-    if (/error|failed|failure|degraded|unhealthy|crash|terminated/.test(value)) return "bad";
-    if (/warning|pending|restart|progress|unknown|notready|not ready/.test(value)) return "warn";
-    if (/healthy|ready|running|available|active|created/.test(value)) return "good";
-    return "other";
-  }
-
-  function emptyState(title, copy, button, action) {
-    return `<div class="empty"><div class="empty-inner"><div class="empty-symbol" aria-hidden="true">◇</div><h2>${html(title)}</h2><p>${html(copy)}</p>${button ? `<button class="btn primary" data-action="${html(action)}">${html(button)}</button>` : ""}</div></div>`;
-  }
-
-  function bindWorkloadControls() {
-    bindWorkloadViewport();
-    const search = document.getElementById("workload-search");
-    if (search) search.addEventListener("input", debounce(() => {
-      state.filters.search = search.value;
-      state.workloadBrowseMode = "auto";
-      updateWorkloadView(true);
-    }, 120));
-    [["connection-filter", "connection"], ["namespace-filter", "namespace"], ["status-filter", "status"]].forEach(([id, key]) => {
-      document.getElementById(id)?.addEventListener("change", event => {
-        state.filters[key] = ["connection", "namespace"].includes(key)
-          ? filterInputValues(event.target.value)
-          : event.target.value;
-        state.workloadBrowseMode = "auto";
-        updateWorkloadView(true);
-      });
-    });
-    document.querySelectorAll(".workload-filter-menu [data-log-menu-search]").forEach(input => {
-      input.addEventListener("input", event => filterLogMenuOptions(event.target.closest(".log-menu-field"), event.target.value));
-    });
-  }
-
-  function syncWorkloadFilterControls() {
-    const search = document.getElementById("workload-search");
-    if (search) search.value = state.filters.search;
-    updateWorkloadFilterMenu("connection", state.filters.connection);
-    updateWorkloadFilterMenu("namespace", state.filters.namespace);
-    updateWorkloadFilterMenu("status", state.filters.status);
-  }
-
-  function updateWorkloadFilterMenu(filter, value) {
-    const field = document.querySelector(`[data-workload-filter="${filter}"]`);
-    if (!field) return;
-    const multiple = field.dataset.multiple === "true";
-    const input = field.querySelector("input[type=hidden]");
-    const options = [...field.querySelectorAll(".log-menu-option")];
-    const values = filterValues(value);
-    const selected = options.filter(option => option.dataset.value && values.includes(option.dataset.value));
-    const allOption = options.find(option => !option.dataset.value) || options[0];
-    const label = multiple && selected.length > 1
-      ? `${selected.length} ${filter === "connection" ? "connections" : "namespaces"}`
-      : selected[0]?.dataset.label || allOption?.dataset.label || allOption?.textContent?.trim() || "";
-    const fullLabel = selected.length ? selected.map(option => option.dataset.label).join(", ") : allOption?.dataset.label || "";
-    if (input) input.value = multiple ? JSON.stringify(values) : values[0] || "";
-    field.querySelector("[data-log-menu-label]")?.replaceChildren(document.createTextNode(label));
-    const trigger = field.querySelector(".log-menu-trigger");
-    if (trigger) {
-      const filterLabel = filter === "connection" ? "Connection" : filter === "namespace" ? "Namespace" : "State";
-      trigger.setAttribute("aria-label", `${filterLabel}: ${fullLabel}`);
-      trigger.title = fullLabel;
-    }
-    for (const option of options) {
-      const isSelected = option.dataset.value ? values.includes(option.dataset.value) : values.length === 0;
-      option.classList.toggle("selected", isSelected);
-      option.setAttribute("aria-selected", String(isSelected));
-    }
-    updateWorkloadFilterDraftSummary(field);
-  }
-
-  function filterInputValues(value) {
-    try {
-      const parsed = JSON.parse(value);
-      return filterValues(parsed);
-    } catch {
-      return filterValues(value);
-    }
-  }
-
-  function updateWorkloadFilterDraftSummary(field) {
-    const summary = field?.querySelector("[data-workload-selection-count]");
-    if (!summary) return;
-    const count = [...field.querySelectorAll(".log-menu-option.selected")].filter(option => option.dataset.value).length;
-    summary.textContent = count ? `${count} selected` : "All";
-  }
-
-  function resetWorkloadFilterDraft(field) {
-    if (!field || field.dataset.multiple !== "true") return;
-    const values = filterInputValues(field.querySelector("input[type=hidden]")?.value || "[]");
-    for (const option of field.querySelectorAll(".log-menu-option")) {
-      const selected = option.dataset.value ? values.includes(option.dataset.value) : values.length === 0;
-      option.classList.toggle("selected", selected);
-      option.setAttribute("aria-selected", String(selected));
-    }
-    updateWorkloadFilterDraftSummary(field);
-  }
-
   async function renderConnections() {
     loadingPage("connections", "Connections");
     await Promise.all([loadConnections(), state.settings ? Promise.resolve() : loadSettings()]);
@@ -2132,7 +2096,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     });
     const attention = availableConnections.filter(item => ["bad", "warn"].includes(connectionStatusClass(item.status?.state))).length;
     shell(`<section class="page connections-page">
-      <header class="page-header"><div><h1 class="page-title">Connections</h1></div><div class="header-actions"><button class="btn primary" data-action="add-connection">Add connection</button></div></header>
+      <header class="page-header"><div><h1 class="page-title">Connections</h1></div><div class="header-actions"><button type="button" class="btn primary" data-action="add-connection">Add connection</button></div></header>
       ${availableConnections.length ? `
         <div class="connection-status-strip" aria-label="Connection overview">
           <span><strong>${availableConnections.length}</strong> configured</span>
@@ -2376,8 +2340,8 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
 
   function settingsTabs(active) {
     return `<nav class="view-tabs settings-tabs" aria-label="Settings sections">
-      <button class="view-tab ${active === "general" ? "active" : ""}" data-action="settings-tab" data-tab="general">General</button>
-      <button class="view-tab ${active === "ssh" ? "active" : ""}" data-action="settings-tab" data-tab="ssh">SSH profiles <span class="tab-count">${state.sshProfiles.length}</span></button>
+      <button type="button" class="view-tab ${active === "general" ? "active" : ""}" data-action="settings-tab" data-tab="general">General</button>
+      <button type="button" class="view-tab ${active === "ssh" ? "active" : ""}" data-action="settings-tab" data-tab="ssh">SSH profiles <span class="tab-count">${state.sshProfiles.length}</span></button>
     </nav>`;
   }
 
@@ -2402,7 +2366,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     shell(`<section class="page settings-page">
       <header class="page-header">
         <div><h1 class="page-title">Settings</h1></div>
-        <div class="header-actions"><button class="btn primary" data-action="add-ssh-profile">New profile</button></div>
+        <div class="header-actions"><button type="button" class="btn primary" data-action="add-ssh-profile">New profile</button></div>
       </header>
       ${settingsTabs("ssh")}
       <section class="ssh-profile-registry" aria-label="Saved SSH profiles">
@@ -2414,7 +2378,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
           <div class="ssh-profile-empty">
             <span class="ssh-profile-empty-mark" aria-hidden="true">SSH</span>
             <div><strong>No SSH profiles yet</strong><p>Create one here or while adding a connection.</p></div>
-            <button class="btn" data-action="add-ssh-profile">Create profile</button>
+            <button type="button" class="btn" data-action="add-ssh-profile">Create profile</button>
           </div>`}
       </section>
     </section>`, "settings");
@@ -2427,7 +2391,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
       <span class="ssh-profile-mark" aria-hidden="true">S</span>
       <div class="ssh-profile-identity"><strong>${html(profile.name)}</strong><small class="mono">${html(sshProfileTarget(profile))}</small></div>
       <div class="ssh-profile-meta"><span>${auth}</span><span>${verification}</span>${profile.proxy_jump ? `<span>via ${html(profile.proxy_jump)}</span>` : ""}</div>
-      <div class="ssh-profile-actions"><button class="btn small" data-action="test-ssh-profile" data-id="${html(profile.id)}">Test</button><button class="btn small danger" data-action="delete-ssh-profile" data-id="${html(profile.id)}">Remove</button></div>
+      <div class="ssh-profile-actions"><button type="button" class="btn small" data-action="test-ssh-profile" data-id="${html(profile.id)}">Test</button><button type="button" class="btn small danger" data-action="delete-ssh-profile" data-id="${html(profile.id)}">Remove</button></div>
     </article>`;
   }
 
@@ -2438,9 +2402,9 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
   }
 
   function showSSHProfileModal() {
-    showModal(`<div class="modal-header"><div><h2 class="modal-title">New SSH profile</h2></div><button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div>
+    showModal(`<div class="modal-header"><div><h2 class="modal-title">New SSH profile</h2></div><button type="button" class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div>
       <div class="modal-body"><form id="ssh-profile-form">${sshProfileEditorFields()}</form></div>
-      <div class="modal-footer"><button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="save-ssh-profile">Save</button></div>`);
+      <div class="modal-footer"><button type="button" class="btn" data-action="close-modal">Cancel</button><button type="button" class="btn primary" data-action="save-ssh-profile">Save</button></div>`);
     document.querySelector('#ssh-profile-form [name="name"]')?.focus();
   }
 
@@ -2638,20 +2602,20 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
             <span id="log-match-count" class="log-match-count">No query</span>
           </div>
           <div class="log-match-navigation" aria-label="Match navigation">
-            <button class="btn small icon-button" data-action="previous-log-match" aria-label="Previous match" title="Previous match (Shift+Enter)" disabled>↑</button>
-            <button class="btn small icon-button" data-action="next-log-match" aria-label="Next match" title="Next match (Enter)" disabled>↓</button>
-            <button class="btn small icon-button" data-action="log-jump-back" aria-label="Back to previous log position" title="Back to previous log position (Alt+Left)" disabled>←</button>
-            <button class="btn small icon-button" data-action="log-jump-forward" aria-label="Forward to next log position" title="Forward to next log position (Alt+Right)" disabled>→</button>
+            <button type="button" class="btn small icon-button" data-action="previous-log-match" aria-label="Previous match" title="Previous match (Shift+Enter)" disabled>↑</button>
+            <button type="button" class="btn small icon-button" data-action="next-log-match" aria-label="Next match" title="Next match (Enter)" disabled>↓</button>
+            <button type="button" class="btn small icon-button" data-action="log-jump-back" aria-label="Back to previous log position" title="Back to previous log position (Alt+Left)" disabled>←</button>
+            <button type="button" class="btn small icon-button" data-action="log-jump-forward" aria-label="Forward to next log position" title="Forward to next log position (Alt+Right)" disabled>→</button>
           </div>
           ${renderLogFormatMenu(logFormatterProfile(request).mode)}
           <label class="toggle log-follow"><input id="stream-follow" type="checkbox" checked> Follow</label>
-          <button class="btn small" data-action="toggle-log-filters" aria-controls="log-filter-panel" aria-expanded="false">Filters <span id="log-filter-count" class="log-filter-badge" hidden></span></button>
-          <button class="btn small" data-action="toggle-log-inspector" aria-controls="log-inspector" aria-expanded="false">Inspector</button>
-          <button class="btn small" data-action="toggle-log-formatter" aria-expanded="false">Format rule</button>
-          <button class="btn small icon-button" data-action="toggle-log-shortcuts" aria-label="Keyboard shortcuts" title="Keyboard shortcuts">?</button>
+          <button type="button" class="btn small" data-action="toggle-log-filters" aria-controls="log-filter-panel" aria-expanded="false">Filters <span id="log-filter-count" class="log-filter-badge" hidden></span></button>
+          <button type="button" class="btn small" data-action="toggle-log-inspector" aria-controls="log-inspector" aria-expanded="false">Inspector</button>
+          <button type="button" class="btn small" data-action="toggle-log-formatter" aria-expanded="false">Format rule</button>
+          <button type="button" class="btn small icon-button" data-action="toggle-log-shortcuts" aria-label="Keyboard shortcuts" title="Keyboard shortcuts">?</button>
         </div>
         <div id="log-filter-panel" class="log-tool-panel log-filter-popover" aria-label="Log filters" hidden>
-          <div class="log-tool-panel-heading"><div><strong>Filter logs</strong><small>Narrow this live buffer without changing it.</small></div><button class="btn ghost small" data-action="clear-log-filters" disabled>Reset</button></div>
+          <div class="log-tool-panel-heading"><div><strong>Filter logs</strong><small>Narrow this live buffer without changing it.</small></div><button type="button" class="btn ghost small" data-action="clear-log-filters" disabled>Reset</button></div>
           <div class="log-filter-grid">
             <div class="log-filter-primary">
               <label>Level<select id="log-level-filter"><option value="">All levels</option><option value="error">Errors</option><option value="warning">Warnings</option><option value="info">Info</option><option value="debug">Debug / trace</option><option value="system">Runtime events</option></select></label>
@@ -2660,33 +2624,33 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
             <div class="log-filter-builder">
               <div id="log-filter-row-path" class="log-filter-condition" hidden>
                 <label>HTTP path<input id="log-http-path-filter" class="field mono" placeholder="/v1/auth"></label>
-                <button class="btn ghost icon-button" data-action="remove-log-filter" data-filter="path" aria-label="Remove HTTP path filter" title="Remove filter">×</button>
+                <button type="button" class="btn ghost icon-button" data-action="remove-log-filter" data-filter="path" aria-label="Remove HTTP path filter" title="Remove filter">×</button>
               </div>
               <div id="log-filter-row-method" class="log-filter-condition" hidden>
                 <label>Method<select id="log-http-method-filter"><option value="">Any method</option><option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option><option>DELETE</option><option>OPTIONS</option><option>HEAD</option></select></label>
-                <button class="btn ghost icon-button" data-action="remove-log-filter" data-filter="method" aria-label="Remove method filter" title="Remove filter">×</button>
+                <button type="button" class="btn ghost icon-button" data-action="remove-log-filter" data-filter="method" aria-label="Remove method filter" title="Remove filter">×</button>
               </div>
               <div id="log-filter-row-status" class="log-filter-condition" hidden>
                 <label>Status<select id="log-http-status-filter"><option value="">Any status</option><option value="2xx">2xx</option><option value="3xx">3xx</option><option value="4xx">4xx</option><option value="5xx">5xx</option></select></label>
-                <button class="btn ghost icon-button" data-action="remove-log-filter" data-filter="status" aria-label="Remove status filter" title="Remove filter">×</button>
+                <button type="button" class="btn ghost icon-button" data-action="remove-log-filter" data-filter="status" aria-label="Remove status filter" title="Remove filter">×</button>
               </div>
               <div id="log-filter-row-regex" class="log-filter-condition" hidden>
                 <label>Find mode<select id="log-find-mode"><option value="text">Plain text</option><option value="regex">Regular expression</option></select></label>
-                <button class="btn ghost icon-button" data-action="remove-log-filter" data-filter="regex" aria-label="Remove find mode filter" title="Remove filter">×</button>
+                <button type="button" class="btn ghost icon-button" data-action="remove-log-filter" data-filter="regex" aria-label="Remove find mode filter" title="Remove filter">×</button>
               </div>
               <div id="log-filter-row-context" class="log-filter-condition context" hidden>
                 <label>Before<input id="log-context-before" class="field" type="number" min="0" max="100" value="0"></label>
                 <label>After<input id="log-context-after" class="field" type="number" min="0" max="100" value="0"></label>
-                <button class="btn ghost icon-button" data-action="remove-log-filter" data-filter="context" aria-label="Remove match context filter" title="Remove filter">×</button>
+                <button type="button" class="btn ghost icon-button" data-action="remove-log-filter" data-filter="context" aria-label="Remove match context filter" title="Remove filter">×</button>
               </div>
               <div class="log-filter-add-wrap">
-                <button class="log-filter-add-button" data-action="toggle-log-filter-picker" aria-controls="log-filter-picker" aria-expanded="false"><span aria-hidden="true">+</span> Add filter</button>
+                <button type="button" class="log-filter-add-button" data-action="toggle-log-filter-picker" aria-controls="log-filter-picker" aria-expanded="false"><span aria-hidden="true">+</span> Add filter</button>
                 <div id="log-filter-picker" class="log-filter-picker" hidden>
-                  <button data-action="add-log-filter" data-filter="path"><span>HTTP path</span><small>Match part of a request path</small></button>
-                  <button data-action="add-log-filter" data-filter="method"><span>Method</span><small>GET, POST, PUT, and more</small></button>
-                  <button data-action="add-log-filter" data-filter="status"><span>Status</span><small>Filter by HTTP status class</small></button>
-                  <button data-action="add-log-filter" data-filter="regex"><span>Regular expression</span><small>Interpret the search query as regex</small></button>
-                  <button data-action="add-log-filter" data-filter="context"><span>Match context</span><small>Show lines before and after matches</small></button>
+                  <button type="button" data-action="add-log-filter" data-filter="path"><span>HTTP path</span><small>Match part of a request path</small></button>
+                  <button type="button" data-action="add-log-filter" data-filter="method"><span>Method</span><small>GET, POST, PUT, and more</small></button>
+                  <button type="button" data-action="add-log-filter" data-filter="status"><span>Status</span><small>Filter by HTTP status class</small></button>
+                  <button type="button" data-action="add-log-filter" data-filter="regex"><span>Regular expression</span><small>Interpret the search query as regex</small></button>
+                  <button type="button" data-action="add-log-filter" data-filter="context"><span>Match context</span><small>Show lines before and after matches</small></button>
                 </div>
               </div>
             </div>
@@ -2695,7 +2659,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
               <div class="log-filter-stream-body">
                 <label class="toggle"><input id="stream-previous" type="checkbox" checked> Previous logs</label>
                 <label>Initial tail<input id="stream-tail" class="field" type="number" min="0" max="100000" value="${html(state.settings?.default_tail_lines ?? 200)}"></label>
-                <div class="log-stream-actions"><button class="btn small" data-action="reconnect-stream">Reconnect</button><button class="btn small danger" data-action="clear-stream">Clear buffer</button></div>
+                <div class="log-stream-actions"><button type="button" class="btn small" data-action="reconnect-stream">Reconnect</button><button type="button" class="btn small danger" data-action="clear-stream">Clear buffer</button></div>
               </div>
             </details>
           </div>
@@ -2703,7 +2667,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
         </div>
         </div>
         <div id="log-formatter-panel" class="log-tool-panel" hidden>
-          <div class="log-tool-panel-heading"><div><strong>Custom formatter</strong><small>Use named regular-expression captures in the output template.</small></div><button class="btn ghost small" data-action="reset-log-formatter">Reset</button></div>
+          <div class="log-tool-panel-heading"><div><strong>Custom formatter</strong><small>Use named regular-expression captures in the output template.</small></div><button type="button" class="btn ghost small" data-action="reset-log-formatter">Reset</button></div>
           <div class="log-formatter-grid">
             <label>Pattern<input id="log-custom-pattern" class="field mono" placeholder="^(?&lt;time&gt;\\S+) (?&lt;level&gt;\\w+) (?&lt;message&gt;.*)$"></label>
             <label>Output template<input id="log-custom-template" class="field mono" placeholder="$level · $message"></label>
@@ -2723,11 +2687,11 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
           </div>
           <aside id="log-inspector" class="log-inspector matches-idle" aria-label="Log navigation and record details" hidden>
             <section class="log-results-section">
-              <div class="log-inspector-heading"><div><strong>Matches</strong><small id="log-results-summary">Add a query or filter</small></div><button class="btn ghost small" data-action="toggle-log-inspector">Close</button></div>
+              <div class="log-inspector-heading"><div><strong>Matches</strong><small id="log-results-summary">Add a query or filter</small></div><button type="button" class="btn ghost small" data-action="toggle-log-inspector">Close</button></div>
               <div id="log-results" class="log-results"><div class="log-inspector-empty">Search or apply filters to build a jump list.</div></div>
             </section>
             <section id="log-record-inspector" class="log-record-inspector">
-              <div class="log-inspector-heading"><div><strong>Record</strong><small>Select a line to inspect or reformat.</small></div>${investigationsAvailable() ? `<button class="btn ghost small" data-action="pin-selected-record" disabled>Pin</button>` : ""}</div>
+              <div class="log-inspector-heading"><div><strong>Record</strong><small>Select a line to inspect or reformat.</small></div>${investigationsAvailable() ? `<button type="button" class="btn ghost small" data-action="pin-selected-record" disabled>Pin</button>` : ""}</div>
               <div id="log-record-detail" class="log-record-detail"><div class="log-inspector-empty">Select a log line.</div></div>
             </section>
           </aside>
@@ -2735,8 +2699,8 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
       </section>`;
     shell(`<section class="page activity-page ${view === "activity" ? "activity-page-live" : ""}">
       <header class="page-header activity-header">
-        <div><button class="btn ghost small activity-back" data-action="back-workloads">← Workloads</button><h1 id="activity-title" class="page-title activity-title">${html(title)}</h1><div id="activity-meta" class="activity-meta">${activityMetaHTML(request, connection, workload)}</div></div>
-        <div class="header-actions"><button class="btn" data-action="save-activity-view">Save view</button>${investigationsAvailable() ? activeInvestigation() ? `<button class="btn" data-nav="/investigations">${html(activeInvestigation().name)} · ${activeInvestigation().evidence.length}</button>` : `<button class="btn" data-action="new-investigation">Start investigation</button>` : ""}${view === "metrics" && investigationsAvailable() ? `<button class="btn primary" data-action="pin-latest-metric">Pin latest sample</button>` : ""}</div>
+        <div><button type="button" class="btn ghost small activity-back" data-action="back-workloads">← Workloads</button><h1 id="activity-title" class="page-title activity-title">${html(title)}</h1><div id="activity-meta" class="activity-meta">${activityMetaHTML(request, connection, workload)}</div></div>
+        <div class="header-actions"><button type="button" class="btn" data-action="save-activity-view">Save view</button>${investigationsAvailable() ? activeInvestigation() ? `<button type="button" class="btn" data-nav="/investigations">${html(activeInvestigation().name)} · ${activeInvestigation().evidence.length}</button>` : `<button type="button" class="btn" data-action="new-investigation">Start investigation</button>` : ""}${view === "metrics" && investigationsAvailable() ? `<button type="button" class="btn primary" data-action="pin-latest-metric">Pin latest sample</button>` : ""}</div>
       </header>
       ${workloadViewTabs(request, view, workload)}
       ${content}
@@ -2786,9 +2750,9 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
       ? encodeURIComponent(JSON.stringify({ connection_id: request.connection_id, project, focus: workload?.name || request.name }))
       : "";
     return `<nav id="workload-view-tabs" class="view-tabs" aria-label="Workload view">
-      <button class="view-tab ${view === "activity" ? "active" : ""}" data-action="show-activity-view" data-request="${encodedRequest}">Logs</button>
-      ${request.targets?.length > 1 ? "" : `<button class="view-tab ${view === "metrics" ? "active" : ""}" data-action="show-metrics-view" data-request="${encodedRequest}">Metrics</button>`}
-      ${request.targets?.length > 1 ? "" : topologyRequest ? `<button class="view-tab ${view === "topology" ? "active" : ""}" data-action="show-topology-view" data-topology-request="${topologyRequest}">Topology</button>` : ""}
+      <button type="button" class="view-tab ${view === "activity" ? "active" : ""}" data-action="show-activity-view" data-request="${encodedRequest}">Logs</button>
+      ${request.targets?.length > 1 ? "" : `<button type="button" class="view-tab ${view === "metrics" ? "active" : ""}" data-action="show-metrics-view" data-request="${encodedRequest}">Metrics</button>`}
+      ${request.targets?.length > 1 ? "" : topologyRequest ? `<button type="button" class="view-tab ${view === "topology" ? "active" : ""}" data-action="show-topology-view" data-topology-request="${topologyRequest}">Topology</button>` : ""}
     </nav>`;
   }
 
@@ -2859,7 +2823,6 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
       && String(item.namespace || "") === String(request.namespace || "")
       && String(item.name || "") === String(request.name || "");
   }
-
   function logFormatterProfile(request) {
     const key = activityWorkloadKey(request);
     let profile = state.logFormatterByWorkload.get(key);
@@ -2904,7 +2867,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
       <div class="log-scope-controls">
         ${renderLogTargetMenu("pod", "Pod", profile.pods, profile.selectedPod, "All pods")}
         ${renderLogTargetMenu("container", "Container", profile.containers, profile.selectedContainer, "All containers")}
-        <button class="btn ghost small" data-action="reset-log-scope" ${profile.selectedPod || profile.selectedContainer ? "" : "hidden"}>Reset</button>
+        <button type="button" class="btn ghost small" data-action="reset-log-scope" ${profile.selectedPod || profile.selectedContainer ? "" : "hidden"}>Reset</button>
       </div>
     </div>`;
   }
@@ -3155,7 +3118,6 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     updateLogTargetOptions(null, profile);
     setStreamStatus(`Opening ${pod || "all pods"} · ${container || "all containers"}…`, "info");
   }
-
   function startActivityStream(request, retainedRecords = [], options = {}) {
     stopActivityStream();
     const events = document.getElementById("stream-events")?.checked === true;
@@ -3466,7 +3428,6 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     node.textContent = message;
     node.classList.toggle("is-hidden", hide);
   }
-
   function scheduleActivityRender(fullRender = false) {
     const stream = state.stream;
     if (!stream) return;
@@ -3968,7 +3929,7 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     const structured = structuredLogForRecord(record);
     const label = structured?.summary || String(record.message || "").replace(/\s+/g, " ").trim() || "Empty record";
     const level = structured?.level || record.level || record.type || "record";
-    return `<button class="log-result ${matchIndex === stream.activeMatch ? "active" : ""}" data-action="jump-log-match" data-index="${index}"><span><time>${html(formatTime(structured?.timestamp || record.timestamp))}</time><small>${html(String(level).toUpperCase())}</small></span><strong>${html(label)}</strong></button>`;
+    return `<button type="button" class="log-result ${matchIndex === stream.activeMatch ? "active" : ""}" data-action="jump-log-match" data-index="${index}"><span><time>${html(formatTime(structured?.timestamp || record.timestamp))}</time><small>${html(String(level).toUpperCase())}</small></span><strong>${html(label)}</strong></button>`;
   }
 
   function updateLogResultsSummary(filter = currentLogFilter()) {
@@ -4189,19 +4150,19 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     const handoffs = availableHandoffs(record);
     const focusActions = record.pod ? `<div class="log-record-focus">
       <span>Focus the live stream</span>
-      <button class="log-focus-choice" data-action="focus-log-pod" data-pod="${html(record.pod)}">Only this pod</button>
-      ${record.container ? `<button class="log-focus-choice" data-action="focus-log-source" data-pod="${html(record.pod)}" data-container="${html(record.container)}">Only this source</button>` : ""}
+      <button type="button" class="log-focus-choice" data-action="focus-log-pod" data-pod="${html(record.pod)}">Only this pod</button>
+      ${record.container ? `<button type="button" class="log-focus-choice" data-action="focus-log-source" data-pod="${html(record.pod)}" data-container="${html(record.container)}">Only this source</button>` : ""}
     </div>` : "";
     target.innerHTML = `
       <div class="log-record-meta"><span>${html(formatTime(record.timestamp, true))}</span><span>${html(origin || record.type || "record")}</span></div>
       ${correlations.length ? `<div class="log-correlation"><span>Correlation</span>${correlations.map(item => `<code>${html(item.key)}=${html(item.value)}</code>`).join("")}</div>` : ""}
-      ${handoffs.length ? `<div class="log-handoff-actions"><span>Open in</span>${handoffs.map(item => `<button class="btn ghost small" data-action="open-handoff" data-id="${html(item.id)}" data-index="${index}">${html(item.name)}</button>`).join("")}</div>` : ""}
+      ${handoffs.length ? `<div class="log-handoff-actions"><span>Open in</span>${handoffs.map(item => `<button type="button" class="btn ghost small" data-action="open-handoff" data-id="${html(item.id)}" data-index="${index}">${html(item.name)}</button>`).join("")}</div>` : ""}
       ${focusActions}
       <div class="log-record-actions">
         <span>Render this record as</span>
-        ${["inherit", "raw", "json", "logfmt", "stack"].map(mode => `<button class="log-format-choice ${selectedFormat === mode ? "active" : ""}" data-action="format-log-record" data-format="${mode}" data-index="${index}">${mode === "inherit" ? "Default" : mode === "logfmt" ? "Key/value" : mode === "stack" ? "Stack trace" : mode.toUpperCase()}</button>`).join("")}
+        ${["inherit", "raw", "json", "logfmt", "stack"].map(mode => `<button type="button" class="log-format-choice ${selectedFormat === mode ? "active" : ""}" data-action="format-log-record" data-format="${mode}" data-index="${index}">${mode === "inherit" ? "Default" : mode === "logfmt" ? "Key/value" : mode === "stack" ? "Stack trace" : mode.toUpperCase()}</button>`).join("")}
       </div>
-      <div class="log-record-raw-heading"><span>Raw record</span><button class="btn ghost small" data-action="copy-log-record" data-index="${index}">Copy</button></div>
+      <div class="log-record-raw-heading"><span>Raw record</span><button type="button" class="btn ghost small" data-action="copy-log-record" data-index="${index}">Copy</button></div>
       <pre class="log-record-raw"></pre>`;
     target.querySelector(".log-record-raw").textContent = String(record.message || "");
   }
@@ -4236,7 +4197,6 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     else stream.expandedEntries.add(key);
     scheduleActivityRender(true);
   }
-
   function renderLogFormatterPreview() {
     const target = document.getElementById("log-formatter-preview");
     const stream = state.stream;
@@ -4593,9 +4553,9 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     const settings = state.settings || { exec_plugin_policy: "allowlist", exec_plugin_allowlist: [] };
     const direct = kind !== "agent";
     showModal(`
-      <div class="modal-header"><div><h2 class="modal-title">${direct ? "Add connection" : "Create remote agent"}</h2></div><button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div>
+      <div class="modal-header"><div><h2 class="modal-title">${direct ? "Add connection" : "Create remote agent"}</h2></div><button type="button" class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div>
       <div class="modal-body">
-        <div class="tabs"><button class="tab ${kind === "kubernetes" ? "active" : ""}" data-action="switch-add-kind" data-kind="kubernetes">Kubernetes</button><button class="tab ${kind === "docker" ? "active" : ""}" data-action="switch-add-kind" data-kind="docker">Docker</button><button class="tab ${kind === "agent" ? "active" : ""}" data-action="switch-add-kind" data-kind="agent" ${remoteAgentsAvailable() ? "" : 'disabled title="Coming soon"'}>Remote agent${remoteAgentsAvailable() ? "" : `<span class="control-note">Coming soon</span>`}</button></div>
+        <div class="tabs"><button type="button" class="tab ${kind === "kubernetes" ? "active" : ""}" data-action="switch-add-kind" data-kind="kubernetes">Kubernetes</button><button type="button" class="tab ${kind === "docker" ? "active" : ""}" data-action="switch-add-kind" data-kind="docker">Docker</button><button type="button" class="tab ${kind === "agent" ? "active" : ""}" data-action="switch-add-kind" data-kind="agent" ${remoteAgentsAvailable() ? "" : 'disabled title="Coming soon"'}>Remote agent${remoteAgentsAvailable() ? "" : `<span class="control-note">Coming soon</span>`}</button></div>
         <form id="connection-form">
           <input type="hidden" name="kind" value="${kind}">
           ${kind === "kubernetes" ? kubernetesForm(settings) : kind === "docker" ? dockerForm() : remoteAgentForm(settings)}
@@ -4604,8 +4564,8 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
       <div class="modal-footer connection-footer">
         ${direct ? `<div id="connection-test-state" class="connection-test-state idle"><span></span><strong>Not tested</strong></div>` : `<div id="connection-test-state" class="connection-test-state idle" hidden><span></span><strong></strong></div>`}
         <div class="connection-footer-actions">
-          <button class="btn" data-action="close-modal">Cancel</button>
-          ${direct ? `<button class="btn" data-action="test-draft-connection">Test</button><span id="add-connection-gate" class="button-gate locked" tabindex="0" data-tooltip="Test the connection successfully before adding it."><button class="btn primary" data-action="submit-connection" disabled>Add</button></span>` : `<button class="btn" data-action="test-agent-ssh" hidden>Test</button><span id="add-connection-gate" class="button-gate"><button class="btn primary" data-action="submit-connection">Create setup</button></span>`}
+          <button type="button" class="btn" data-action="close-modal">Cancel</button>
+          ${direct ? `<button type="button" class="btn" data-action="test-draft-connection">Test</button><span id="add-connection-gate" class="button-gate locked" tabindex="0" data-tooltip="Test the connection successfully before adding it."><button type="button" class="btn primary" data-action="submit-connection" disabled>Add</button></span>` : `<button type="button" class="btn" data-action="test-agent-ssh" hidden>Test</button><span id="add-connection-gate" class="button-gate"><button type="button" class="btn primary" data-action="submit-connection">Create setup</button></span>`}
         </div>
       </div>`, "wide connection-modal");
     document.getElementById("kube-source")?.addEventListener("change", updateKubeSourceFields);
@@ -5000,7 +4960,6 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
       updateKubeSourceFields();
     }
   }
-
   function updateCloudImportFields(provider) {
     const options = {
       eks: {
@@ -5763,11 +5722,10 @@ current-context: runwake-openshift
       button.textContent = "Add";
     }
   }
-
   function showAgentModal(connection) {
     const settings = state.settings || {};
     showModal(`
-      <div class="modal-header"><div><h2 class="modal-title">Deploy remote agent</h2></div><button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div>
+      <div class="modal-header"><div><h2 class="modal-title">Deploy remote agent</h2></div><button type="button" class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div>
       <div class="modal-body"><form id="agent-form">
         <div class="form-grid">
           <label>Connection name<input class="field" name="name" value="${html(connection.name)} agent" required></label>
@@ -5782,7 +5740,7 @@ current-context: runwake-openshift
         <div class="form-section"><label class="choice full-choice"><input type="checkbox" name="manual"><span><span class="choice-title">Generate manifest only</span><span class="choice-copy">Return YAML without applying it.</span></span></label></div>
         <div class="notice mt-16">The generated role can read Pods, Pod logs, Events, Deployments, StatefulSets, DaemonSets, Jobs, and Pod metrics when metrics.k8s.io is installed. It cannot read Secrets or modify application resources.</div>
       </form></div>
-      <div class="modal-footer"><button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="submit-agent" data-id="${html(connection.id)}">Deploy agent</button></div>`, "wide");
+      <div class="modal-footer"><button type="button" class="btn" data-action="close-modal">Cancel</button><button type="button" class="btn primary" data-action="submit-agent" data-id="${html(connection.id)}">Deploy agent</button></div>`, "wide");
     document.getElementById("agent-mode").addEventListener("change", updateAgentTTL);
     document.getElementById("agent-namespace-mode").addEventListener("change", updateAgentNamespaceField);
     updateAgentTTL();
@@ -5833,12 +5791,12 @@ current-context: runwake-openshift
   }
 
   function showKubernetesAgentSetup(installManifest, teardownManifest) {
-    showModal(`<div class="modal-header"><div><h2 class="modal-title">Kubernetes agent setup</h2><p class="modal-copy">The credential is embedded in the Secret and is shown only in this response. Store the removal manifest with your operational notes.</p></div><button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div>
+    showModal(`<div class="modal-header"><div><h2 class="modal-title">Kubernetes agent setup</h2><p class="modal-copy">The credential is embedded in the Secret and is shown only in this response. Store the removal manifest with your operational notes.</p></div><button type="button" class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div>
       <div class="modal-body">
-        <div class="code-section"><div class="section-head"><h3 class="section-title">Install</h3><button class="btn small" data-action="copy-code" data-target="agent-install-manifest">Copy</button></div><pre id="agent-install-manifest" class="code-block"></pre></div>
-        ${teardownManifest ? `<div class="code-section"><div class="section-head"><h3 class="section-title">Remove</h3><button class="btn small" data-action="copy-code" data-target="agent-remove-manifest">Copy</button></div><pre id="agent-remove-manifest" class="code-block"></pre></div>` : ""}
+        <div class="code-section"><div class="section-head"><h3 class="section-title">Install</h3><button type="button" class="btn small" data-action="copy-code" data-target="agent-install-manifest">Copy</button></div><pre id="agent-install-manifest" class="code-block"></pre></div>
+        ${teardownManifest ? `<div class="code-section"><div class="section-head"><h3 class="section-title">Remove</h3><button type="button" class="btn small" data-action="copy-code" data-target="agent-remove-manifest">Copy</button></div><pre id="agent-remove-manifest" class="code-block"></pre></div>` : ""}
       </div>
-      <div class="modal-footer"><button class="btn primary" data-action="finish-agent-setup">Done</button></div>`, "wide");
+      <div class="modal-footer"><button type="button" class="btn primary" data-action="finish-agent-setup">Done</button></div>`, "wide");
     document.getElementById("agent-install-manifest").textContent = installManifest;
     if (teardownManifest) document.getElementById("agent-remove-manifest").textContent = teardownManifest;
   }
@@ -5867,18 +5825,21 @@ current-context: runwake-openshift
     ].filter(Boolean).join(continuation);
     const removeCommand = response.mode === "temporary" ? `docker stop ${containerName}` : `docker rm -f ${containerName}`;
     const envText = Object.entries(environment).map(([key, value]) => `${key}=${value}`).join("\n");
-    showModal(`<div class="modal-header"><div><h2 class="modal-title">Docker agent setup</h2><p class="modal-copy">Run this on the Docker host. The token is shown once. Docker socket access is highly privileged; use a dedicated host or socket proxy when the trust boundary requires it.</p></div><button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div>
+    showModal(`<div class="modal-header"><div><h2 class="modal-title">Docker agent setup</h2><p class="modal-copy">Run this on the Docker host. The token is shown once. Docker socket access is highly privileged; use a dedicated host or socket proxy when the trust boundary requires it.</p></div><button type="button" class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div>
       <div class="modal-body">
-        <div class="code-section"><div class="section-head"><h3 class="section-title">Start</h3><button class="btn small" data-action="copy-code" data-target="docker-agent-command">Copy</button></div><pre id="docker-agent-command" class="code-block"></pre></div>
-        <div class="code-section"><div class="section-head"><h3 class="section-title">Remove</h3><button class="btn small" data-action="copy-code" data-target="docker-agent-remove">Copy</button></div><pre id="docker-agent-remove" class="code-block"></pre></div>
+        <div class="code-section"><div class="section-head"><h3 class="section-title">Start</h3><button type="button" class="btn small" data-action="copy-code" data-target="docker-agent-command">Copy</button></div><pre id="docker-agent-command" class="code-block"></pre></div>
+        <div class="code-section"><div class="section-head"><h3 class="section-title">Remove</h3><button type="button" class="btn small" data-action="copy-code" data-target="docker-agent-remove">Copy</button></div><pre id="docker-agent-remove" class="code-block"></pre></div>
         <details class="disclosure"><summary>Environment variables</summary><pre id="docker-agent-environment" class="code-block"></pre></details>
         <div class="notice mt-16">The command maps the Docker socket group into the non-root agent container on Linux. Adjust the group mapping for hosts that expose the socket differently.</div>
       </div>
-      <div class="modal-footer"><button class="btn primary" data-action="finish-agent-setup">Done</button></div>`, "wide");
+      <div class="modal-footer"><button type="button" class="btn primary" data-action="finish-agent-setup">Done</button></div>`, "wide");
     document.getElementById("docker-agent-command").textContent = command;
     document.getElementById("docker-agent-remove").textContent = removeCommand;
     document.getElementById("docker-agent-environment").textContent = envText;
   }
+  let modalReturnFocus = null;
+  let modalTitleSequence = 0;
+  const MODAL_FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
   function currentInvestigationScope() {
     const route = routeInfo();
@@ -5896,7 +5857,7 @@ current-context: runwake-openshift
   function showNewInvestigationModal() {
     if (!investigationsAvailable()) return;
     const suggested = state.stream?.request?.name ? `${state.stream.request.name} investigation` : "New investigation";
-    showModal(`<div class="modal-header"><div><h2 class="modal-title">Start investigation</h2><p class="modal-copy">Pinned evidence stays in this browser until you export or delete it.</p></div><button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><label>Name<input id="new-investigation-name" class="field" value="${html(suggested)}" maxlength="160" autofocus></label></div><div class="modal-footer"><button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="confirm-new-investigation">Start</button></div>`);
+    showModal(`<div class="modal-header"><div><h2 class="modal-title">Start investigation</h2><p class="modal-copy">Pinned evidence stays in this browser until you export or delete it.</p></div><button type="button" class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><label>Name<input id="new-investigation-name" class="field" value="${html(suggested)}" maxlength="160" autofocus></label></div><div class="modal-footer"><button type="button" class="btn" data-action="close-modal">Cancel</button><button type="button" class="btn primary" data-action="confirm-new-investigation">Start</button></div>`);
   }
 
   function pinEvidence(kind, payload) {
@@ -5938,7 +5899,7 @@ current-context: runwake-openshift
     if (!session) return toast("Investigation not found.", "error");
     const preview = personal.exportBundle(session, []);
     const count = Object.values(preview.counts).reduce((total, value) => total + value, 0);
-    showModal(`<div class="modal-header"><div><h2 class="modal-title">Export evidence</h2><p class="modal-copy">Review the automatic redaction result before saving this bundle.</p></div><button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><div class="redaction-summary"><strong>${count} redaction${count === 1 ? "" : "s"} applied</strong><span>${Object.entries(preview.counts).map(([name, value]) => `${html(name)} ${value}`).join(" · ") || "No credential-shaped values detected"}</span></div><label>Additional redaction patterns<textarea id="export-redaction-patterns" class="field mono" rows="5" placeholder="One regular expression per line"></textarea><span class="hint">Patterns are applied case-insensitively to the exported copy only.</span></label><details class="export-preview"><summary>Preview metadata</summary><pre>${html(JSON.stringify({ name: preview.value.investigation.name, evidence: preview.value.investigation.evidence.length, createdAt: preview.value.investigation.createdAt }, null, 2))}</pre></details></div><div class="modal-footer"><button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="confirm-export-investigation" data-id="${html(session.id)}">Save JSON</button></div>`, "wide");
+    showModal(`<div class="modal-header"><div><h2 class="modal-title">Export evidence</h2><p class="modal-copy">Review the automatic redaction result before saving this bundle.</p></div><button type="button" class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><div class="redaction-summary"><strong>${count} redaction${count === 1 ? "" : "s"} applied</strong><span>${Object.entries(preview.counts).map(([name, value]) => `${html(name)} ${value}`).join(" · ") || "No credential-shaped values detected"}</span></div><label>Additional redaction patterns<textarea id="export-redaction-patterns" class="field mono" rows="5" placeholder="One regular expression per line"></textarea><span class="hint">Patterns are applied case-insensitively to the exported copy only.</span></label><details class="export-preview"><summary>Preview metadata</summary><pre>${html(JSON.stringify({ name: preview.value.investigation.name, evidence: preview.value.investigation.evidence.length, createdAt: preview.value.investigation.createdAt }, null, 2))}</pre></details></div><div class="modal-footer"><button type="button" class="btn" data-action="close-modal">Cancel</button><button type="button" class="btn primary" data-action="confirm-export-investigation" data-id="${html(session.id)}">Save JSON</button></div>`, "wide");
   }
 
   function confirmExportInvestigation(sessionID) {
@@ -5959,11 +5920,11 @@ current-context: runwake-openshift
 
   function showSavedViewsModal() {
     const views = state.personal.views || [];
-    showModal(`<div class="modal-header"><div><h2 class="modal-title">Saved views</h2><p class="modal-copy">Filters and scope only; log content is never included.</p></div><button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><div class="saved-view-list">${views.length ? views.map(view => `<div><span><strong>${html(view.name)}</strong><small>${html(view.kind)} · ${html(relativeTime(view.updatedAt))}</small></span><button class="btn ghost small" data-action="apply-saved-view" data-id="${html(view.id)}">Open</button><button class="btn ghost small" data-action="rename-saved-view" data-id="${html(view.id)}">Rename</button><button class="btn ghost small danger" data-action="delete-saved-view" data-id="${html(view.id)}">Delete</button></div>`).join("") : `<div class="investigation-empty">No saved views yet.</div>`}</div></div>${views.length ? `<div class="modal-footer"><button class="btn danger" data-action="reset-saved-views">Delete all saved views</button></div>` : ""}`);
+    showModal(`<div class="modal-header"><div><h2 class="modal-title">Saved views</h2><p class="modal-copy">Filters and scope only; log content is never included.</p></div><button type="button" class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><div class="saved-view-list">${views.length ? views.map(view => `<div><span><strong>${html(view.name)}</strong><small>${html(view.kind)} · ${html(relativeTime(view.updatedAt))}</small></span><button type="button" class="btn ghost small" data-action="apply-saved-view" data-id="${html(view.id)}">Open</button><button type="button" class="btn ghost small" data-action="rename-saved-view" data-id="${html(view.id)}">Rename</button><button type="button" class="btn ghost small danger" data-action="delete-saved-view" data-id="${html(view.id)}">Delete</button></div>`).join("") : `<div class="investigation-empty">No saved views yet.</div>`}</div></div>${views.length ? `<div class="modal-footer"><button type="button" class="btn danger" data-action="reset-saved-views">Delete all saved views</button></div>` : ""}`);
   }
 
   function showSaveWorkloadViewModal() {
-    showModal(`<div class="modal-header"><div><h2 class="modal-title">Save workload view</h2><p class="modal-copy">Stores the current search and filters in this browser.</p></div><button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><label>Name<input id="saved-view-name" class="field" value="${html(state.filters.search || "Workload view")}" maxlength="120" autofocus></label></div><div class="modal-footer"><button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="confirm-save-workload-view">Save</button></div>`);
+    showModal(`<div class="modal-header"><div><h2 class="modal-title">Save workload view</h2><p class="modal-copy">Stores the current search and filters in this browser.</p></div><button type="button" class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><label>Name<input id="saved-view-name" class="field" value="${html(state.filters.search || "Workload view")}" maxlength="120" autofocus></label></div><div class="modal-footer"><button type="button" class="btn" data-action="close-modal">Cancel</button><button type="button" class="btn primary" data-action="confirm-save-workload-view">Save</button></div>`);
   }
 
   function saveCurrentWorkloadView() {
@@ -5977,7 +5938,7 @@ current-context: runwake-openshift
 
   function showSaveActivityViewModal() {
     const name = state.stream?.request?.targets?.length > 1 ? `${state.stream.request.targets.length} workload logs` : `${state.stream?.request?.name || "Activity"} logs`;
-    showModal(`<div class="modal-header"><div><h2 class="modal-title">Save activity view</h2><p class="modal-copy">Stores scope, filters, and formatter preferences. Buffered log content is excluded.</p></div><button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><label>Name<input id="saved-view-name" class="field" value="${html(name)}" maxlength="120" autofocus></label></div><div class="modal-footer"><button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="confirm-save-activity-view">Save</button></div>`);
+    showModal(`<div class="modal-header"><div><h2 class="modal-title">Save activity view</h2><p class="modal-copy">Stores scope, filters, and formatter preferences. Buffered log content is excluded.</p></div><button type="button" class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><label>Name<input id="saved-view-name" class="field" value="${html(name)}" maxlength="120" autofocus></label></div><div class="modal-footer"><button type="button" class="btn" data-action="close-modal">Cancel</button><button type="button" class="btn primary" data-action="confirm-save-activity-view">Save</button></div>`);
   }
 
   function saveCurrentActivityView() {
@@ -6029,7 +5990,7 @@ current-context: runwake-openshift
   function showRenameSavedViewModal(viewID) {
     const view = state.personal.views.find(item => item.id === viewID);
     if (!view) return;
-    showModal(`<div class="modal-header"><div><h2 class="modal-title">Rename saved view</h2></div><button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><label>Name<input id="saved-view-name" class="field" value="${html(view.name)}" maxlength="120" autofocus></label></div><div class="modal-footer"><button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="confirm-rename-saved-view" data-id="${html(view.id)}">Rename</button></div>`);
+    showModal(`<div class="modal-header"><div><h2 class="modal-title">Rename saved view</h2></div><button type="button" class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><label>Name<input id="saved-view-name" class="field" value="${html(view.name)}" maxlength="120" autofocus></label></div><div class="modal-footer"><button type="button" class="btn" data-action="close-modal">Cancel</button><button type="button" class="btn primary" data-action="confirm-rename-saved-view" data-id="${html(view.id)}">Rename</button></div>`);
   }
 
   function deleteSavedView(viewID) {
@@ -6046,7 +6007,7 @@ current-context: runwake-openshift
 
   function showHandoffModal() {
     const context = currentHandoffContext();
-    showModal(`<div class="modal-header"><div><h2 class="modal-title">Observability handoffs</h2><p class="modal-copy">Open the current scope in tools that already store and query telemetry.</p></div><button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><div class="handoff-list">${state.personal.handoffs.map(item => `<label><span><strong>${html(item.name)}</strong><small>Use placeholders such as {namespace}, {workload}, {trace_id}, {start}, and {end}.</small></span><input class="field mono" data-handoff-template="${html(item.id)}" value="${html(item.template)}" placeholder="https://example.com/explore?workload={workload}"><output data-handoff-error="${html(item.id)}"></output></label>`).join("")}</div><div class="handoff-context"><strong>Current context</strong><code>${html(JSON.stringify(context))}</code></div></div><div class="modal-footer"><button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="save-handoffs">Save</button></div>`, "wide");
+    showModal(`<div class="modal-header"><div><h2 class="modal-title">Observability handoffs</h2><p class="modal-copy">Open the current scope in tools that already store and query telemetry.</p></div><button type="button" class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><div class="handoff-list">${state.personal.handoffs.map(item => `<label><span><strong>${html(item.name)}</strong><small>Use placeholders such as {namespace}, {workload}, {trace_id}, {start}, and {end}.</small></span><input class="field mono" data-handoff-template="${html(item.id)}" value="${html(item.template)}" placeholder="https://example.com/explore?workload={workload}"><output data-handoff-error="${html(item.id)}"></output></label>`).join("")}</div><div class="handoff-context"><strong>Current context</strong><code>${html(JSON.stringify(context))}</code></div></div><div class="modal-footer"><button type="button" class="btn" data-action="close-modal">Cancel</button><button type="button" class="btn primary" data-action="save-handoffs">Save</button></div>`, "wide");
   }
 
   function currentHandoffContext(record) {
@@ -6067,7 +6028,7 @@ current-context: runwake-openshift
     const record = Number.isFinite(recordIndex) ? state.stream?.records?.[recordIndex] : selectedLogRecord()?.record;
     const item = availableHandoffs(record).find(candidate => candidate.id === handoffID);
     if (!item) return toast("That handoff is not configured for this context.", "error");
-    showModal(`<div class="modal-header"><div><h2 class="modal-title">Open ${html(item.name)}</h2><p class="modal-copy">Review the generated destination before leaving Runwake.</p></div><button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><div class="handoff-preview"><span>Destination</span><code>${html(item.url)}</code></div></div><div class="modal-footer"><button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="confirm-open-handoff" data-url="${html(item.url)}">Open in new tab</button></div>`);
+    showModal(`<div class="modal-header"><div><h2 class="modal-title">Open ${html(item.name)}</h2><p class="modal-copy">Review the generated destination before leaving Runwake.</p></div><button type="button" class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><div class="handoff-preview"><span>Destination</span><code>${html(item.url)}</code></div></div><div class="modal-footer"><button type="button" class="btn" data-action="close-modal">Cancel</button><button type="button" class="btn primary" data-action="confirm-open-handoff" data-url="${html(item.url)}">Open in new tab</button></div>`);
   }
 
   function openHandoff(url) {
@@ -6161,10 +6122,115 @@ current-context: runwake-openshift
     savePersonalState("Diagnostics exported");
   }
 
-  function showModal(content, className = "") {
-    modalRoot.innerHTML = `<div class="modal-backdrop" data-action="backdrop"><section class="modal ${className}" role="dialog" aria-modal="true">${content}</section></div>`;
+  function modalFocusableElements(dialog) {
+    return [...dialog.querySelectorAll(MODAL_FOCUSABLE)].filter(element => {
+      const style = getComputedStyle(element);
+      return !element.hidden && style.display !== "none" && style.visibility !== "hidden";
+    });
   }
-  function closeModal() { modalRoot.innerHTML = ""; }
+
+  function trapModalFocus(event) {
+    if (event.key !== "Tab") return;
+    const dialog = event.currentTarget;
+    const focusable = modalFocusableElements(dialog);
+    if (!focusable.length) {
+      event.preventDefault();
+      dialog.focus();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable.at(-1);
+    if (event.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  function showModal(content, className = "") {
+    if (!modalRoot.querySelector('[role="dialog"]')) modalReturnFocus = document.activeElement;
+    modalRoot.innerHTML = `<div class="modal-backdrop" data-action="backdrop"><section class="modal ${className}" role="dialog" aria-modal="true" tabindex="-1">${content}</section></div>`;
+    const dialog = modalRoot.querySelector('[role="dialog"]');
+    const title = dialog?.querySelector(".modal-title, h1, h2, h3");
+    if (title) {
+      if (!title.id) title.id = `modal-title-${++modalTitleSequence}`;
+      dialog.setAttribute("aria-labelledby", title.id);
+    } else if (dialog?.classList.contains("command-palette-modal")) dialog.setAttribute("aria-label", "Command palette");
+    else dialog?.setAttribute("aria-label", "Dialog");
+    dialog?.addEventListener("keydown", trapModalFocus);
+    app.inert = true;
+    app.setAttribute("aria-hidden", "true");
+    document.body.classList.add("modal-open");
+    requestAnimationFrame(() => {
+      const preferred = dialog?.querySelector("[autofocus]") || modalFocusableElements(dialog)[0] || dialog;
+      preferred?.focus({ preventScroll: true });
+    });
+  }
+
+  function closeModal() {
+    if (!modalRoot.childElementCount) return;
+    modalRoot.innerHTML = "";
+    app.inert = false;
+    app.removeAttribute("aria-hidden");
+    document.body.classList.remove("modal-open");
+    const returnTarget = modalReturnFocus;
+    modalReturnFocus = null;
+    requestAnimationFrame(() => {
+      if (returnTarget?.isConnected) returnTarget.focus({ preventScroll: true });
+    });
+  }
+  function investigationEvidenceLabel(item) {
+    const payload = item.payload || {};
+    if (item.kind === "metric") return `${payload.name || "Metric"} · ${formatTime(payload.timestamp)}`;
+    const message = String(payload.message || payload.summary || item.kind).replace(/\s+/g, " ").trim();
+    return `${item.kind} · ${message.slice(0, 110)}`;
+  }
+
+  function investigationTimeline(session) {
+    const items = [...(session.evidence || [])].sort((a, b) => new Date(a.payload?.timestamp || a.pinnedAt) - new Date(b.payload?.timestamp || b.pinnedAt));
+    if (!items.length) return `<div class="investigation-empty">Pin a log record, runtime event, or metric sample while inspecting a workload.</div>`;
+    return `<ol class="investigation-timeline">${items.map(item => `<li><time>${html(formatTime(item.payload?.timestamp || item.pinnedAt, true))}</time><span class="evidence-kind">${html(item.kind)}</span><strong>${html(investigationEvidenceLabel(item).replace(/^\w+ · /, ""))}</strong><small>${html(item.payload?.workload || item.payload?.name || item.payload?.source || "")}</small></li>`).join("")}</ol>`;
+  }
+
+  function renderInvestigations() {
+    if (!investigationsAvailable()) return navigate("/workloads");
+    const sessions = state.personal.sessions || [];
+    const active = activeInvestigation();
+    const viewed = active || sessions.find(item => item.id === state.viewingSessionID && item.readOnly);
+    shell(`<section class="page investigations-page">
+      <header class="page-header"><div><h1 class="page-title">Investigations</h1><p class="page-description">Local evidence only. Nothing on this page is stored by the Runwake server.</p></div><div class="header-actions"><label class="btn file-button">Import<input id="investigation-import" type="file" accept="application/json,.json" hidden></label>${active ? `<button type="button" class="btn" data-action="close-investigation" data-id="${html(active.id)}">Finish current</button>` : `<button type="button" class="btn primary" data-action="new-investigation">New investigation</button>`}</div></header>
+      ${viewed ? `<section class="investigation-workbench">
+        <div class="investigation-heading"><div><span class="live-signal ${viewed.readOnly ? "readonly" : ""}" aria-hidden="true"></span><input id="investigation-name" class="investigation-name" value="${html(viewed.name)}" aria-label="Investigation name" ${viewed.readOnly ? "readonly" : ""}></div><span>${viewed.readOnly ? "Imported read-only · " : ""}${viewed.evidence.length} pinned · updated ${html(relativeTime(viewed.updatedAt))}</span></div>
+        <div class="investigation-layout"><div>${investigationTimeline(viewed)}</div><aside><label>Notes<textarea id="investigation-notes" class="field" rows="10" placeholder="Record what you observed, not a guessed cause." ${viewed.readOnly ? "readonly" : ""}>${html(viewed.notes)}</textarea></label><div class="investigation-actions"><button type="button" class="btn" data-action="export-investigation" data-id="${html(viewed.id)}">Export evidence</button>${viewed.readOnly ? "" : `<button type="button" class="btn ghost" data-action="configure-handoffs">Handoffs</button>`}</div></aside></div>
+      </section>` : `<div class="investigation-empty-state"><span aria-hidden="true">◎</span><h2>No active investigation</h2><p>Start one before opening live evidence, or import a bundle created earlier.</p><button type="button" class="btn primary" data-action="new-investigation">Start investigation</button></div>`}
+      ${sessions.length ? `<section class="investigation-history"><div class="section-head"><h2 class="section-title">Local history</h2><span class="hint">Latest ${sessions.length} sessions</span></div><div class="investigation-list">${sessions.map(session => `<article><button type="button" data-action="activate-investigation" data-id="${html(session.id)}"><span class="status ${session.status === "active" ? "good" : "other"}">${html(session.status)}</span><strong>${html(session.name)}</strong><small>${session.evidence.length} pinned · ${html(relativeTime(session.updatedAt))}</small></button><div><button type="button" class="btn ghost small" data-action="export-investigation" data-id="${html(session.id)}">Export</button><button type="button" class="btn ghost small danger" data-action="delete-investigation" data-id="${html(session.id)}">Delete</button></div></article>`).join("")}</div></section>` : ""}
+    </section>`, "investigations");
+    bindInvestigationControls();
+  }
+
+  function bindInvestigationControls() {
+    const active = activeInvestigation();
+    const persist = debounce(() => {
+      if (!active) return;
+      personal.updateSession(state.personal, active.id, { name: document.getElementById("investigation-name")?.value, notes: document.getElementById("investigation-notes")?.value });
+      savePersonalState();
+    }, 220);
+    document.getElementById("investigation-name")?.addEventListener("input", persist);
+    document.getElementById("investigation-notes")?.addEventListener("input", persist);
+    document.getElementById("investigation-import")?.addEventListener("change", async event => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      try {
+        const session = personal.importBundle(state.personal, await file.text());
+        savePersonalState(`${session.name} imported`);
+        renderInvestigations();
+      } catch (error) {
+        toast(`Import failed: ${error.message}`, "error");
+      }
+    });
+  }
 
   function showEditConnection(connection) {
     const dockerAccess = connection.kind === "docker" ? `
@@ -6178,7 +6244,7 @@ current-context: runwake-openshift
       </div>` : "";
     showModal(`<div class="modal-header">
         <div><h2 id="edit-connection-title" class="modal-title">Edit connection</h2></div>
-        <button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button>
+        <button type="button" class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button>
       </div>
       <div class="modal-body">
         <form id="edit-connection-form">
@@ -6191,8 +6257,8 @@ current-context: runwake-openshift
         </form>
       </div>
       <div class="modal-footer">
-        <button class="btn" data-action="close-modal">Cancel</button>
-        <button class="btn primary" data-action="save-connection-edit" data-id="${html(connection.id)}">Save</button>
+        <button type="button" class="btn" data-action="close-modal">Cancel</button>
+        <button type="button" class="btn primary" data-action="save-connection-edit" data-id="${html(connection.id)}">Save</button>
       </div>`, "edit-connection-modal");
     modalRoot.querySelector(".modal")?.setAttribute("aria-labelledby", "edit-connection-title");
     const input = modalRoot.querySelector('[name="name"]');
@@ -6231,7 +6297,7 @@ current-context: runwake-openshift
     closeTopologyContextMenu();
     showModal(`<div class="modal-header">
         <div><h2 id="restart-container-title" class="modal-title">Restart container?</h2><p class="modal-copy">Docker will stop and start this container.</p></div>
-        <button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button>
+        <button type="button" class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button>
       </div>
       <div class="modal-body">
         <div class="runtime-action-confirmation">
@@ -6241,8 +6307,8 @@ current-context: runwake-openshift
         <div id="docker-action-error" class="notice error remove-error" role="alert" hidden></div>
       </div>
       <div class="modal-footer">
-        <button class="btn" data-action="close-modal" autofocus>Cancel</button>
-        <button class="btn primary" data-action="confirm-restart-docker-container" data-connection="${html(connectionID)}" data-container="${html(containerID)}" data-name="${html(name)}">Restart</button>
+        <button type="button" class="btn" data-action="close-modal" autofocus>Cancel</button>
+        <button type="button" class="btn primary" data-action="confirm-restart-docker-container" data-connection="${html(connectionID)}" data-container="${html(containerID)}" data-name="${html(name)}">Restart</button>
       </div>`, "confirm-modal");
     modalRoot.querySelector(".modal")?.setAttribute("aria-labelledby", "restart-container-title");
     modalRoot.querySelector("[autofocus]")?.focus();
@@ -6253,7 +6319,7 @@ current-context: runwake-openshift
     const count = state.workloads.filter(item => item.connection_id === connectionID && composeProjectName(item) === project).length;
     showModal(`<div class="modal-header">
         <div><h2 id="restart-compose-title" class="modal-title">Restart Compose project?</h2><p class="modal-copy">Docker will restart every container currently in this project.</p></div>
-        <button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button>
+        <button type="button" class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button>
       </div>
       <div class="modal-body">
         <div class="runtime-action-confirmation">
@@ -6263,8 +6329,8 @@ current-context: runwake-openshift
         <div id="docker-action-error" class="notice error remove-error" role="alert" hidden></div>
       </div>
       <div class="modal-footer">
-        <button class="btn" data-action="close-modal" autofocus>Cancel</button>
-        <button class="btn primary" data-action="confirm-restart-compose-project" data-connection="${html(connectionID)}" data-project="${html(project)}">Restart project</button>
+        <button type="button" class="btn" data-action="close-modal" autofocus>Cancel</button>
+        <button type="button" class="btn primary" data-action="confirm-restart-compose-project" data-connection="${html(connectionID)}" data-project="${html(project)}">Restart project</button>
       </div>`, "confirm-modal");
     modalRoot.querySelector(".modal")?.setAttribute("aria-labelledby", "restart-compose-title");
     modalRoot.querySelector("[autofocus]")?.focus();
@@ -6274,7 +6340,7 @@ current-context: runwake-openshift
     closeTopologyContextMenu();
     showModal(`<div class="modal-header">
         <div><h2 id="delete-container-title" class="modal-title">Delete container?</h2><p class="modal-copy">This force-removes the container and cannot be undone.</p></div>
-        <button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button>
+        <button type="button" class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button>
       </div>
       <div class="modal-body">
         <div class="remove-confirmation">
@@ -6284,8 +6350,8 @@ current-context: runwake-openshift
         <div id="docker-action-error" class="notice error remove-error" role="alert" hidden></div>
       </div>
       <div class="modal-footer">
-        <button class="btn" data-action="close-modal" autofocus>Cancel</button>
-        <button class="btn destructive" data-action="confirm-delete-docker-container" data-connection="${html(connectionID)}" data-container="${html(containerID)}" data-name="${html(name)}">Delete container</button>
+        <button type="button" class="btn" data-action="close-modal" autofocus>Cancel</button>
+        <button type="button" class="btn destructive" data-action="confirm-delete-docker-container" data-connection="${html(connectionID)}" data-container="${html(containerID)}" data-name="${html(name)}">Delete container</button>
       </div>`, "confirm-modal");
     modalRoot.querySelector(".modal")?.setAttribute("aria-labelledby", "delete-container-title");
     modalRoot.querySelector("[autofocus]")?.focus();
@@ -6310,7 +6376,7 @@ current-context: runwake-openshift
     closeTopologyContextMenu();
     showModal(`<div class="modal-header">
         <div><h2 id="${titleID}" class="modal-title">${deleting ? "Delete" : "Restart"} ${count} container${count === 1 ? "" : "s"}?</h2><p class="modal-copy">${deleting ? "Docker will force-remove every selected container. This cannot be undone." : "Docker will stop and start every selected container."}</p></div>
-        <button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button>
+        <button type="button" class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button>
       </div>
       <div class="modal-body">
         <div class="${deleting ? "remove-confirmation" : "runtime-action-confirmation"}">
@@ -6321,8 +6387,8 @@ current-context: runwake-openshift
         <div id="docker-action-error" class="notice error remove-error" role="alert" hidden></div>
       </div>
       <div class="modal-footer">
-        <button class="btn" data-action="close-modal" autofocus>Cancel</button>
-        <button class="btn ${deleting ? "destructive" : "primary"}" data-action="confirm-${operation}-selected-containers">${deleting ? "Delete" : "Restart"} ${count} container${count === 1 ? "" : "s"}</button>
+        <button type="button" class="btn" data-action="close-modal" autofocus>Cancel</button>
+        <button type="button" class="btn ${deleting ? "destructive" : "primary"}" data-action="confirm-${operation}-selected-containers">${deleting ? "Delete" : "Restart"} ${count} container${count === 1 ? "" : "s"}</button>
       </div>`, "confirm-modal");
     modalRoot.querySelector(".modal")?.setAttribute("aria-labelledby", titleID);
     modalRoot.querySelector("[autofocus]")?.focus();
@@ -6430,7 +6496,7 @@ current-context: runwake-openshift
       : "This removes the saved route. It does not stop or modify the runtime.";
     showModal(`<div class="modal-header">
         <div><h2 id="remove-connection-title" class="modal-title">Remove connection?</h2><p class="modal-copy">This action cannot be undone.</p></div>
-        <button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button>
+        <button type="button" class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button>
       </div>
       <div class="modal-body">
         <div class="remove-confirmation">
@@ -6440,8 +6506,8 @@ current-context: runwake-openshift
         <div id="remove-connection-error" class="notice error remove-error" role="alert" hidden></div>
       </div>
       <div class="modal-footer">
-        <button class="btn" data-action="close-modal" autofocus>Cancel</button>
-        <button class="btn destructive" data-action="confirm-delete-connection" data-id="${html(connection.id)}">Remove</button>
+        <button type="button" class="btn" data-action="close-modal" autofocus>Cancel</button>
+        <button type="button" class="btn destructive" data-action="confirm-delete-connection" data-id="${html(connection.id)}">Remove</button>
       </div>`, "confirm-modal");
     modalRoot.querySelector(".modal")?.setAttribute("aria-labelledby", "remove-connection-title");
     modalRoot.querySelector("[autofocus]")?.focus();
@@ -6482,7 +6548,7 @@ current-context: runwake-openshift
   function showDeleteSSHProfileConfirmation(profile) {
     showModal(`<div class="modal-header">
         <div><h2 id="remove-ssh-profile-title" class="modal-title">Remove SSH profile?</h2><p class="modal-copy">This action cannot be undone.</p></div>
-        <button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button>
+        <button type="button" class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button>
       </div>
       <div class="modal-body">
         <div class="remove-confirmation">
@@ -6492,8 +6558,8 @@ current-context: runwake-openshift
         <div id="remove-ssh-profile-error" class="notice error remove-error" role="alert" hidden></div>
       </div>
       <div class="modal-footer">
-        <button class="btn" data-action="close-modal" autofocus>Cancel</button>
-        <button class="btn destructive" data-action="confirm-delete-ssh-profile" data-id="${html(profile.id)}">Remove</button>
+        <button type="button" class="btn" data-action="close-modal" autofocus>Cancel</button>
+        <button type="button" class="btn destructive" data-action="confirm-delete-ssh-profile" data-id="${html(profile.id)}">Remove</button>
       </div>`, "confirm-modal");
     modalRoot.querySelector(".modal")?.setAttribute("aria-labelledby", "remove-ssh-profile-title");
     modalRoot.querySelector("[autofocus]")?.focus();
@@ -6550,33 +6616,38 @@ current-context: runwake-openshift
     let timer;
     return (...args) => { clearTimeout(timer); timer = setTimeout(() => fn(...args), delay); };
   }
-
-  document.addEventListener("click", async event => {
-    if (!event.target.closest(".log-menu-field")) closeLogMenus();
-    if (!event.target.closest(".connection-action-menu")) closeConnectionMenus();
-    if (!event.target.closest(".topology-context-menu")) closeTopologyContextMenu();
-    const nav = event.target.closest("[data-nav]");
-    if (nav) { navigate(nav.dataset.nav); return; }
-    const topology = event.target.closest("[data-topology]");
-    if (topology) {
-      const request = JSON.parse(decodeURIComponent(topology.dataset.topology));
-      navigate(`/topology?${new URLSearchParams(request).toString()}`);
-      return;
-    }
-    const workload = event.target.closest("[data-workload]");
-    if (event.target.closest(".workload-select-cell")) return;
-    if (workload && !event.target.closest("[data-action], input, button, a, select, textarea")) {
-      const request = JSON.parse(decodeURIComponent(workload.dataset.workload));
-      navigate(`/activity?${new URLSearchParams(request).toString()}`);
-      return;
-    }
-    const target = event.target.closest("[data-action]");
-    if (!target) return;
-    const action = target.dataset.action;
-    if (action !== "toggle-connection-menu") closeConnectionMenus();
-    if (!investigationsAvailable() && INVESTIGATION_ACTIONS.has(action)) return;
-    try {
-      switch (action) {
+  registerActionHandler("connections", [
+    "add-connection",
+    "add-connection-kind",
+    "filter-connections",
+    "toggle-connection-menu",
+    "edit-connection",
+    "save-connection-edit",
+    "view-connection-workloads",
+    "switch-add-kind",
+    "settings-tab",
+    "manage-ssh-profiles",
+    "add-ssh-profile",
+    "save-ssh-profile",
+    "save-inline-ssh-profile",
+    "cancel-inline-ssh",
+    "test-ssh-profile",
+    "delete-ssh-profile",
+    "confirm-delete-ssh-profile",
+    "test-draft-connection",
+    "test-agent-ssh",
+    "submit-connection",
+    "close-modal",
+    "backdrop",
+    "test-connection",
+    "delete-connection",
+    "confirm-delete-connection",
+    "deploy-agent",
+    "submit-agent",
+    "copy-code",
+    "finish-agent-setup"
+  ], async (action, { target, event }) => {
+    switch (action) {
         case "add-connection":
           await Promise.all([state.settings ? Promise.resolve(state.settings) : loadSettings(), state.sshProfilesLoaded ? Promise.resolve(state.sshProfiles) : loadSSHProfiles()]);
           showAddConnection();
@@ -6654,6 +6725,74 @@ current-context: runwake-openshift
         case "submit-connection": await submitConnection(); break;
         case "close-modal": closeModal(); break;
         case "backdrop": if (event.target === target) closeModal(); break;
+        case "test-connection": {
+          target.disabled = true;
+          target.textContent = "Testing…";
+          const result = await api(`/api/v1/connections/${encodeURIComponent(target.dataset.id)}/test`, { method: "POST" });
+          toast(result.message || `Connected${result.details?.server_version ? ` · ${result.details.server_version}` : ""}`);
+          target.disabled = false;
+          target.textContent = "Test";
+          break;
+        }
+        case "delete-connection": {
+          const connection = state.connections.find(item => item.id === target.dataset.id);
+          if (connection) showDeleteConnectionConfirmation(connection);
+          break;
+        }
+        case "confirm-delete-connection": await deleteConnection(target.dataset.id); break;
+        case "deploy-agent": {
+          if (!state.settings) await loadSettings();
+          const connection = state.connections.find(item => item.id === target.dataset.id);
+          if (connection) showAgentModal(connection);
+          break;
+        }
+        case "submit-agent": await submitAgent(target.dataset.id); break;
+        case "copy-code": {
+          await navigator.clipboard.writeText(document.getElementById(target.dataset.target)?.textContent || "");
+          toast("Copied");
+          break;
+        }
+        case "finish-agent-setup": {
+          closeModal();
+          toast("Agent connection created");
+          await renderConnections();
+          break;
+        }
+      default:
+        return;
+    }
+  });
+  registerActionHandler("personal workflows", [
+    "open-command-palette",
+    "execute-command",
+    "new-investigation",
+    "confirm-new-investigation",
+    "activate-investigation",
+    "close-investigation",
+    "delete-investigation",
+    "export-investigation",
+    "confirm-export-investigation",
+    "pin-selected-record",
+    "pin-latest-metric",
+    "configure-handoffs",
+    "save-handoffs",
+    "export-diagnostics",
+    "check-for-update",
+    "open-release",
+    "open-handoff",
+    "confirm-open-handoff",
+    "save-workload-view",
+    "confirm-save-workload-view",
+    "save-activity-view",
+    "confirm-save-activity-view",
+    "apply-saved-view",
+    "rename-saved-view",
+    "confirm-rename-saved-view",
+    "delete-saved-view",
+    "reset-saved-views",
+    "manage-saved-views"
+  ], async (action, { target, event }) => {
+    switch (action) {
         case "open-command-palette": showCommandPalette(); break;
         case "execute-command": executeCommand(target.dataset.commandId || ""); break;
         case "new-investigation": showNewInvestigationModal(); break;
@@ -6735,6 +6874,30 @@ current-context: runwake-openshift
           showSavedViewsModal();
           break;
         case "manage-saved-views": showSavedViewsModal(); break;
+      default:
+        return;
+    }
+  });
+  registerActionHandler("workloads", [
+    "clear-workload-selection",
+    "restart-selected-containers",
+    "delete-selected-containers",
+    "confirm-restart-selected-containers",
+    "confirm-delete-selected-containers",
+    "open-selected-logs",
+    "refresh-workloads",
+    "load-workload-metrics",
+    "show-workload-list",
+    "show-workload-overview",
+    "open-workload-group",
+    "clear-filters",
+    "open-connections",
+    "back-workloads",
+    "filter-workloads-from-activity",
+    "filter-workloads-from-topology",
+    "refresh-topology"
+  ], async (action, { target, event }) => {
+    switch (action) {
         case "clear-workload-selection":
           state.selectedWorkloads.clear();
           updateWorkloadSelectionBar();
@@ -6801,6 +6964,19 @@ current-context: runwake-openshift
         case "refresh-topology":
           await refreshTopology({ connection_id: target.dataset.connection || "", project: target.dataset.project || "", focus: target.dataset.focus || "" });
           break;
+      default:
+        return;
+    }
+  });
+  registerActionHandler("runtime operations", [
+    "restart-docker-container",
+    "delete-docker-container",
+    "restart-compose-project",
+    "confirm-restart-docker-container",
+    "confirm-delete-docker-container",
+    "confirm-restart-compose-project"
+  ], async (action, { target, event }) => {
+    switch (action) {
         case "restart-docker-container":
           showRestartDockerContainerConfirmation(target.dataset.connection || "", target.dataset.container || "", target.dataset.name || "Container");
           break;
@@ -6838,6 +7014,25 @@ current-context: runwake-openshift
             successMessage: response => `${target.dataset.project || "Compose project"} restarted · ${response?.containers || 0} container${response?.containers === 1 ? "" : "s"}`,
           });
           break;
+      default:
+        return;
+    }
+  });
+  registerActionHandler("topology", [
+    "toggle-topology-node",
+    "toggle-all-topology-nodes",
+    "open-topology-project",
+    "open-topology-connected",
+    "open-topology-logs",
+    "toggle-topology-context-node",
+    "set-all-topology-nodes",
+    "filter-topology-node-workloads",
+    "copy-topology-node-name",
+    "zoom-topology",
+    "reset-topology-zoom",
+    "show-full-topology"
+  ], async (action, { target, event }) => {
+    switch (action) {
         case "toggle-topology-node":
           toggleTopologyNode(target.closest(".topology-node"));
           break;
@@ -6895,6 +7090,48 @@ current-context: runwake-openshift
         case "show-full-topology":
           navigate(`/topology?${new URLSearchParams({ connection_id: target.dataset.connection || "", project: target.dataset.project || "" }).toString()}`);
           break;
+      default:
+        return;
+    }
+  });
+  registerActionHandler("activity", [
+    "show-activity-view",
+    "show-metrics-view",
+    "show-topology-view",
+    "reconnect-stream",
+    "clear-stream",
+    "previous-log-match",
+    "next-log-match",
+    "log-jump-back",
+    "log-jump-forward",
+    "jump-log-match",
+    "select-log-record",
+    "format-log-record",
+    "copy-log-record",
+    "toggle-log-entry",
+    "focus-log-pod",
+    "focus-log-source",
+    "toggle-log-menu",
+    "clear-log-menu-search",
+    "select-fixed-choice",
+    "select-workload-filter",
+    "toggle-workload-filter-option",
+    "clear-workload-filter-draft",
+    "apply-workload-filter",
+    "select-log-format",
+    "select-log-target",
+    "reset-log-scope",
+    "toggle-log-filters",
+    "toggle-log-filter-picker",
+    "add-log-filter",
+    "remove-log-filter",
+    "toggle-log-inspector",
+    "toggle-log-formatter",
+    "toggle-log-shortcuts",
+    "clear-log-filters",
+    "reset-log-formatter"
+  ], async (action, { target, event }) => {
+    switch (action) {
         case "show-activity-view": {
           const request = JSON.parse(decodeURIComponent(target.dataset.request));
           navigate(`/activity?${activityQuery(request).toString()}`);
@@ -7041,40 +7278,37 @@ current-context: runwake-openshift
         case "toggle-log-shortcuts": setLogToolPanel("shortcuts"); break;
         case "clear-log-filters": clearLogFilters(); break;
         case "reset-log-formatter": resetLogFormatter(); break;
-        case "test-connection": {
-          target.disabled = true;
-          target.textContent = "Testing…";
-          const result = await api(`/api/v1/connections/${encodeURIComponent(target.dataset.id)}/test`, { method: "POST" });
-          toast(result.message || `Connected${result.details?.server_version ? ` · ${result.details.server_version}` : ""}`);
-          target.disabled = false;
-          target.textContent = "Test";
-          break;
-        }
-        case "delete-connection": {
-          const connection = state.connections.find(item => item.id === target.dataset.id);
-          if (connection) showDeleteConnectionConfirmation(connection);
-          break;
-        }
-        case "confirm-delete-connection": await deleteConnection(target.dataset.id); break;
-        case "deploy-agent": {
-          if (!state.settings) await loadSettings();
-          const connection = state.connections.find(item => item.id === target.dataset.id);
-          if (connection) showAgentModal(connection);
-          break;
-        }
-        case "submit-agent": await submitAgent(target.dataset.id); break;
-        case "copy-code": {
-          await navigator.clipboard.writeText(document.getElementById(target.dataset.target)?.textContent || "");
-          toast("Copied");
-          break;
-        }
-        case "finish-agent-setup": {
-          closeModal();
-          toast("Agent connection created");
-          await renderConnections();
-          break;
-        }
-      }
+      default:
+        return;
+    }
+  });
+  document.addEventListener("click", async event => {
+    if (!event.target.closest(".log-menu-field")) closeLogMenus();
+    if (!event.target.closest(".connection-action-menu")) closeConnectionMenus();
+    if (!event.target.closest(".topology-context-menu")) closeTopologyContextMenu();
+    const nav = event.target.closest("[data-nav]");
+    if (nav) { navigate(nav.dataset.nav); return; }
+    const topology = event.target.closest("[data-topology]");
+    if (topology) {
+      const request = JSON.parse(decodeURIComponent(topology.dataset.topology));
+      navigate(`/topology?${new URLSearchParams(request).toString()}`);
+      return;
+    }
+    const workload = event.target.closest("[data-workload]");
+    if (event.target.closest(".workload-select-cell")) return;
+    if (workload && !event.target.closest("[data-action], input, button, a, select, textarea")) {
+      const request = JSON.parse(decodeURIComponent(workload.dataset.workload));
+      navigate(`/activity?${new URLSearchParams(request).toString()}`);
+      return;
+    }
+    const target = event.target.closest("[data-action]");
+    if (!target) return;
+    const action = target.dataset.action;
+    if (action !== "toggle-connection-menu") closeConnectionMenus();
+    if (!investigationsAvailable() && INVESTIGATION_ACTIONS.has(action)) return;
+    try {
+      const handled = await dispatchAction(action, { target, event });
+      if (!handled) console.warn(`Unhandled UI action: ${action}`);
     } catch (error) {
       if (!(error instanceof AuthenticationRequired)) toast(error.message, "error");
       if (action === "test-connection") {
@@ -7083,7 +7317,6 @@ current-context: runwake-openshift
       }
     }
   });
-
   document.addEventListener("change", event => {
     const selection = event.target.closest?.("[data-select-workload]");
     if (!selection) return;
@@ -7097,7 +7330,6 @@ current-context: runwake-openshift
     } else state.selectedWorkloads.delete(selection.dataset.selectWorkload);
     updateWorkloadSelectionBar();
   });
-
   document.addEventListener("dblclick", event => {
     const node = event.target.closest?.("[data-topology-node]");
     if (!node || event.target.closest("button, a, input, select, textarea")) return;
@@ -7303,7 +7535,6 @@ current-context: runwake-openshift
       scrollLogToLatest();
     }
   });
-
   window.addEventListener("hashchange", renderRoute);
   WORKLOAD_FILTER_DESKTOP_MEDIA.addEventListener("change", event => {
     const disclosure = document.querySelector(".workload-filter-disclosure");
