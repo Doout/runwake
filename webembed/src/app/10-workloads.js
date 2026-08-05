@@ -96,7 +96,6 @@
         ${state.connections.length ? `
           <div id="workload-inventory-status">${workloadInventoryStatus()}</div>
           ${savedWorkloadViews()}
-          <div id="workload-selection-bar">${workloadSelectionBar()}</div>
           <div class="toolbar">
             <div class="search-wrap"><label class="sr-only" for="workload-search">Search workloads</label><input id="workload-search" class="field" type="search" placeholder="Search name, namespace, image…" value="${html(filters.search)}"></div>
             <details class="workload-filter-disclosure" ${WORKLOAD_FILTER_DESKTOP_MEDIA.matches ? "open" : ""}>
@@ -108,7 +107,8 @@
                 <button id="workload-filter-clear" type="button" class="workload-filter-reset" data-action="clear-filters" ${workloadActiveFilterCount() ? "" : "hidden"}>Clear filters</button>
               </div>
             </details>
-          </div>` : ""}
+          </div>
+          <div id="workload-selection-bar">${workloadSelectionBar()}</div>` : ""}
         <div id="workload-content">${workloadContent(filtered)}</div>
       </section>`;
     shell(body, "workloads");
@@ -129,9 +129,10 @@
       && selectedItems.every(item => item.platform === "docker" && item.uid && canManageDockerConnection(item.connection_id));
     const includesDocker = selectedItems.some(item => item.platform === "docker");
     const runtimeActions = everySelectionIsManageable
-      ? `<button type="button" class="btn small" data-action="restart-selected-containers">Restart ${selected}</button><button type="button" class="btn destructive small" data-action="delete-selected-containers">Delete ${selected}</button>`
+      ? `<button type="button" class="btn small" data-action="restart-selected-containers">Restart ${selected}</button><button type="button" class="btn ghost danger small" data-action="delete-selected-containers">Delete ${selected}</button>`
       : includesDocker ? `<span class="workload-selection-note">Runtime actions require managed Docker containers only.</span>` : "";
-    return `<div class="workload-selection-bar"><span role="status" aria-live="polite"><strong>${selected}</strong> selected</span><div>${runtimeActions}<button type="button" class="btn ghost small" data-action="clear-workload-selection">Clear</button><button type="button" class="btn primary small" data-action="open-selected-logs">Open merged logs</button></div></div>`;
+    const selectionLabel = selected === 1 ? "workload selected" : "workloads selected";
+    return `<div class="workload-selection-bar"><span class="workload-selection-count" role="status" aria-live="polite"><strong>${selected}</strong> ${selectionLabel}</span><div class="workload-selection-actions"><button type="button" class="btn primary small" data-action="open-selected-logs">Open merged logs</button>${runtimeActions}<span class="workload-selection-divider" aria-hidden="true"></span><button type="button" class="btn ghost small" data-action="clear-workload-selection">Clear selection</button></div></div>`;
   }
 
   function selectedWorkloadItems() {
