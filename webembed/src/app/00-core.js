@@ -71,10 +71,11 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
 
   const WORKLOAD_STREAM_RENDER_MS = 100;
   const WORKLOAD_ROW_HEIGHT = 69;
-  const WORKLOAD_ROW_HEIGHT_NARROW = 84;
+  const WORKLOAD_ROW_HEIGHT_NARROW = 104;
   const WORKLOAD_OVERSCAN = 8;
   const WORKLOAD_AUTO_METRICS_LIMIT = 2000;
   const WORKLOAD_OVERVIEW_THRESHOLD = 500;
+  const WORKLOAD_FILTER_DESKTOP_MEDIA = window.matchMedia("(min-width: 651px)");
   const INVESTIGATION_ACTIONS = new Set([
     "new-investigation",
     "confirm-new-investigation",
