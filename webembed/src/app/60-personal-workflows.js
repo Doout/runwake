@@ -1,3 +1,6 @@
+  let modalReturnFocus = null;
+  let modalTitleSequence = 0;
+  const MODAL_FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
   function currentInvestigationScope() {
     const route = routeInfo();
@@ -15,7 +18,7 @@
   function showNewInvestigationModal() {
     if (!investigationsAvailable()) return;
     const suggested = state.stream?.request?.name ? `${state.stream.request.name} investigation` : "New investigation";
-    showModal(`<div class="modal-header"><div><h2 class="modal-title">Start investigation</h2><p class="modal-copy">Pinned evidence stays in this browser until you export or delete it.</p></div><button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><label>Name<input id="new-investigation-name" class="field" value="${html(suggested)}" maxlength="160" autofocus></label></div><div class="modal-footer"><button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="confirm-new-investigation">Start</button></div>`);
+    showModal(`<div class="modal-header"><div><h2 class="modal-title">Start investigation</h2><p class="modal-copy">Pinned evidence stays in this browser until you export or delete it.</p></div><button type="button" class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><label>Name<input id="new-investigation-name" class="field" value="${html(suggested)}" maxlength="160" autofocus></label></div><div class="modal-footer"><button type="button" class="btn" data-action="close-modal">Cancel</button><button type="button" class="btn primary" data-action="confirm-new-investigation">Start</button></div>`);
   }
 
   function pinEvidence(kind, payload) {
@@ -57,7 +60,7 @@
     if (!session) return toast("Investigation not found.", "error");
     const preview = personal.exportBundle(session, []);
     const count = Object.values(preview.counts).reduce((total, value) => total + value, 0);
-    showModal(`<div class="modal-header"><div><h2 class="modal-title">Export evidence</h2><p class="modal-copy">Review the automatic redaction result before saving this bundle.</p></div><button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><div class="redaction-summary"><strong>${count} redaction${count === 1 ? "" : "s"} applied</strong><span>${Object.entries(preview.counts).map(([name, value]) => `${html(name)} ${value}`).join(" · ") || "No credential-shaped values detected"}</span></div><label>Additional redaction patterns<textarea id="export-redaction-patterns" class="field mono" rows="5" placeholder="One regular expression per line"></textarea><span class="hint">Patterns are applied case-insensitively to the exported copy only.</span></label><details class="export-preview"><summary>Preview metadata</summary><pre>${html(JSON.stringify({ name: preview.value.investigation.name, evidence: preview.value.investigation.evidence.length, createdAt: preview.value.investigation.createdAt }, null, 2))}</pre></details></div><div class="modal-footer"><button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="confirm-export-investigation" data-id="${html(session.id)}">Save JSON</button></div>`, "wide");
+    showModal(`<div class="modal-header"><div><h2 class="modal-title">Export evidence</h2><p class="modal-copy">Review the automatic redaction result before saving this bundle.</p></div><button type="button" class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><div class="redaction-summary"><strong>${count} redaction${count === 1 ? "" : "s"} applied</strong><span>${Object.entries(preview.counts).map(([name, value]) => `${html(name)} ${value}`).join(" · ") || "No credential-shaped values detected"}</span></div><label>Additional redaction patterns<textarea id="export-redaction-patterns" class="field mono" rows="5" placeholder="One regular expression per line"></textarea><span class="hint">Patterns are applied case-insensitively to the exported copy only.</span></label><details class="export-preview"><summary>Preview metadata</summary><pre>${html(JSON.stringify({ name: preview.value.investigation.name, evidence: preview.value.investigation.evidence.length, createdAt: preview.value.investigation.createdAt }, null, 2))}</pre></details></div><div class="modal-footer"><button type="button" class="btn" data-action="close-modal">Cancel</button><button type="button" class="btn primary" data-action="confirm-export-investigation" data-id="${html(session.id)}">Save JSON</button></div>`, "wide");
   }
 
   function confirmExportInvestigation(sessionID) {
@@ -78,11 +81,11 @@
 
   function showSavedViewsModal() {
     const views = state.personal.views || [];
-    showModal(`<div class="modal-header"><div><h2 class="modal-title">Saved views</h2><p class="modal-copy">Filters and scope only; log content is never included.</p></div><button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><div class="saved-view-list">${views.length ? views.map(view => `<div><span><strong>${html(view.name)}</strong><small>${html(view.kind)} · ${html(relativeTime(view.updatedAt))}</small></span><button class="btn ghost small" data-action="apply-saved-view" data-id="${html(view.id)}">Open</button><button class="btn ghost small" data-action="rename-saved-view" data-id="${html(view.id)}">Rename</button><button class="btn ghost small danger" data-action="delete-saved-view" data-id="${html(view.id)}">Delete</button></div>`).join("") : `<div class="investigation-empty">No saved views yet.</div>`}</div></div>${views.length ? `<div class="modal-footer"><button class="btn danger" data-action="reset-saved-views">Delete all saved views</button></div>` : ""}`);
+    showModal(`<div class="modal-header"><div><h2 class="modal-title">Saved views</h2><p class="modal-copy">Filters and scope only; log content is never included.</p></div><button type="button" class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><div class="saved-view-list">${views.length ? views.map(view => `<div><span><strong>${html(view.name)}</strong><small>${html(view.kind)} · ${html(relativeTime(view.updatedAt))}</small></span><button type="button" class="btn ghost small" data-action="apply-saved-view" data-id="${html(view.id)}">Open</button><button type="button" class="btn ghost small" data-action="rename-saved-view" data-id="${html(view.id)}">Rename</button><button type="button" class="btn ghost small danger" data-action="delete-saved-view" data-id="${html(view.id)}">Delete</button></div>`).join("") : `<div class="investigation-empty">No saved views yet.</div>`}</div></div>${views.length ? `<div class="modal-footer"><button type="button" class="btn danger" data-action="reset-saved-views">Delete all saved views</button></div>` : ""}`);
   }
 
   function showSaveWorkloadViewModal() {
-    showModal(`<div class="modal-header"><div><h2 class="modal-title">Save workload view</h2><p class="modal-copy">Stores the current search and filters in this browser.</p></div><button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><label>Name<input id="saved-view-name" class="field" value="${html(state.filters.search || "Workload view")}" maxlength="120" autofocus></label></div><div class="modal-footer"><button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="confirm-save-workload-view">Save</button></div>`);
+    showModal(`<div class="modal-header"><div><h2 class="modal-title">Save workload view</h2><p class="modal-copy">Stores the current search and filters in this browser.</p></div><button type="button" class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><label>Name<input id="saved-view-name" class="field" value="${html(state.filters.search || "Workload view")}" maxlength="120" autofocus></label></div><div class="modal-footer"><button type="button" class="btn" data-action="close-modal">Cancel</button><button type="button" class="btn primary" data-action="confirm-save-workload-view">Save</button></div>`);
   }
 
   function saveCurrentWorkloadView() {
@@ -96,7 +99,7 @@
 
   function showSaveActivityViewModal() {
     const name = state.stream?.request?.targets?.length > 1 ? `${state.stream.request.targets.length} workload logs` : `${state.stream?.request?.name || "Activity"} logs`;
-    showModal(`<div class="modal-header"><div><h2 class="modal-title">Save activity view</h2><p class="modal-copy">Stores scope, filters, and formatter preferences. Buffered log content is excluded.</p></div><button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><label>Name<input id="saved-view-name" class="field" value="${html(name)}" maxlength="120" autofocus></label></div><div class="modal-footer"><button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="confirm-save-activity-view">Save</button></div>`);
+    showModal(`<div class="modal-header"><div><h2 class="modal-title">Save activity view</h2><p class="modal-copy">Stores scope, filters, and formatter preferences. Buffered log content is excluded.</p></div><button type="button" class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><label>Name<input id="saved-view-name" class="field" value="${html(name)}" maxlength="120" autofocus></label></div><div class="modal-footer"><button type="button" class="btn" data-action="close-modal">Cancel</button><button type="button" class="btn primary" data-action="confirm-save-activity-view">Save</button></div>`);
   }
 
   function saveCurrentActivityView() {
@@ -148,7 +151,7 @@
   function showRenameSavedViewModal(viewID) {
     const view = state.personal.views.find(item => item.id === viewID);
     if (!view) return;
-    showModal(`<div class="modal-header"><div><h2 class="modal-title">Rename saved view</h2></div><button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><label>Name<input id="saved-view-name" class="field" value="${html(view.name)}" maxlength="120" autofocus></label></div><div class="modal-footer"><button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="confirm-rename-saved-view" data-id="${html(view.id)}">Rename</button></div>`);
+    showModal(`<div class="modal-header"><div><h2 class="modal-title">Rename saved view</h2></div><button type="button" class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><label>Name<input id="saved-view-name" class="field" value="${html(view.name)}" maxlength="120" autofocus></label></div><div class="modal-footer"><button type="button" class="btn" data-action="close-modal">Cancel</button><button type="button" class="btn primary" data-action="confirm-rename-saved-view" data-id="${html(view.id)}">Rename</button></div>`);
   }
 
   function deleteSavedView(viewID) {
@@ -165,7 +168,7 @@
 
   function showHandoffModal() {
     const context = currentHandoffContext();
-    showModal(`<div class="modal-header"><div><h2 class="modal-title">Observability handoffs</h2><p class="modal-copy">Open the current scope in tools that already store and query telemetry.</p></div><button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><div class="handoff-list">${state.personal.handoffs.map(item => `<label><span><strong>${html(item.name)}</strong><small>Use placeholders such as {namespace}, {workload}, {trace_id}, {start}, and {end}.</small></span><input class="field mono" data-handoff-template="${html(item.id)}" value="${html(item.template)}" placeholder="https://example.com/explore?workload={workload}"><output data-handoff-error="${html(item.id)}"></output></label>`).join("")}</div><div class="handoff-context"><strong>Current context</strong><code>${html(JSON.stringify(context))}</code></div></div><div class="modal-footer"><button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="save-handoffs">Save</button></div>`, "wide");
+    showModal(`<div class="modal-header"><div><h2 class="modal-title">Observability handoffs</h2><p class="modal-copy">Open the current scope in tools that already store and query telemetry.</p></div><button type="button" class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><div class="handoff-list">${state.personal.handoffs.map(item => `<label><span><strong>${html(item.name)}</strong><small>Use placeholders such as {namespace}, {workload}, {trace_id}, {start}, and {end}.</small></span><input class="field mono" data-handoff-template="${html(item.id)}" value="${html(item.template)}" placeholder="https://example.com/explore?workload={workload}"><output data-handoff-error="${html(item.id)}"></output></label>`).join("")}</div><div class="handoff-context"><strong>Current context</strong><code>${html(JSON.stringify(context))}</code></div></div><div class="modal-footer"><button type="button" class="btn" data-action="close-modal">Cancel</button><button type="button" class="btn primary" data-action="save-handoffs">Save</button></div>`, "wide");
   }
 
   function currentHandoffContext(record) {
@@ -186,7 +189,7 @@
     const record = Number.isFinite(recordIndex) ? state.stream?.records?.[recordIndex] : selectedLogRecord()?.record;
     const item = availableHandoffs(record).find(candidate => candidate.id === handoffID);
     if (!item) return toast("That handoff is not configured for this context.", "error");
-    showModal(`<div class="modal-header"><div><h2 class="modal-title">Open ${html(item.name)}</h2><p class="modal-copy">Review the generated destination before leaving Runwake.</p></div><button class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><div class="handoff-preview"><span>Destination</span><code>${html(item.url)}</code></div></div><div class="modal-footer"><button class="btn" data-action="close-modal">Cancel</button><button class="btn primary" data-action="confirm-open-handoff" data-url="${html(item.url)}">Open in new tab</button></div>`);
+    showModal(`<div class="modal-header"><div><h2 class="modal-title">Open ${html(item.name)}</h2><p class="modal-copy">Review the generated destination before leaving Runwake.</p></div><button type="button" class="btn ghost icon-button" data-action="close-modal" aria-label="Close">×</button></div><div class="modal-body"><div class="handoff-preview"><span>Destination</span><code>${html(item.url)}</code></div></div><div class="modal-footer"><button type="button" class="btn" data-action="close-modal">Cancel</button><button type="button" class="btn primary" data-action="confirm-open-handoff" data-url="${html(item.url)}">Open in new tab</button></div>`);
   }
 
   function openHandoff(url) {
@@ -280,7 +283,62 @@
     savePersonalState("Diagnostics exported");
   }
 
-  function showModal(content, className = "") {
-    modalRoot.innerHTML = `<div class="modal-backdrop" data-action="backdrop"><section class="modal ${className}" role="dialog" aria-modal="true">${content}</section></div>`;
+  function modalFocusableElements(dialog) {
+    return [...dialog.querySelectorAll(MODAL_FOCUSABLE)].filter(element => {
+      const style = getComputedStyle(element);
+      return !element.hidden && style.display !== "none" && style.visibility !== "hidden";
+    });
   }
-  function closeModal() { modalRoot.innerHTML = ""; }
+
+  function trapModalFocus(event) {
+    if (event.key !== "Tab") return;
+    const dialog = event.currentTarget;
+    const focusable = modalFocusableElements(dialog);
+    if (!focusable.length) {
+      event.preventDefault();
+      dialog.focus();
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable.at(-1);
+    if (event.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
+
+  function showModal(content, className = "") {
+    if (!modalRoot.querySelector('[role="dialog"]')) modalReturnFocus = document.activeElement;
+    modalRoot.innerHTML = `<div class="modal-backdrop" data-action="backdrop"><section class="modal ${className}" role="dialog" aria-modal="true" tabindex="-1">${content}</section></div>`;
+    const dialog = modalRoot.querySelector('[role="dialog"]');
+    const title = dialog?.querySelector(".modal-title, h1, h2, h3");
+    if (title) {
+      if (!title.id) title.id = `modal-title-${++modalTitleSequence}`;
+      dialog.setAttribute("aria-labelledby", title.id);
+    } else if (dialog?.classList.contains("command-palette-modal")) dialog.setAttribute("aria-label", "Command palette");
+    else dialog?.setAttribute("aria-label", "Dialog");
+    dialog?.addEventListener("keydown", trapModalFocus);
+    app.inert = true;
+    app.setAttribute("aria-hidden", "true");
+    document.body.classList.add("modal-open");
+    requestAnimationFrame(() => {
+      const preferred = dialog?.querySelector("[autofocus]") || modalFocusableElements(dialog)[0] || dialog;
+      preferred?.focus({ preventScroll: true });
+    });
+  }
+
+  function closeModal() {
+    if (!modalRoot.childElementCount) return;
+    modalRoot.innerHTML = "";
+    app.inert = false;
+    app.removeAttribute("aria-hidden");
+    document.body.classList.remove("modal-open");
+    const returnTarget = modalReturnFocus;
+    modalReturnFocus = null;
+    requestAnimationFrame(() => {
+      if (returnTarget?.isConnected) returnTarget.focus({ preventScroll: true });
+    });
+  }

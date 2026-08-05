@@ -87,6 +87,21 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     "pin-selected-record",
     "pin-latest-metric",
   ]);
+  const actionHandlerRegistry = new Map();
+
+  function registerActionHandler(domain, actions, handler) {
+    for (const action of actions) {
+      if (actionHandlerRegistry.has(action)) throw new Error(`Duplicate UI action registration: ${action}`);
+      actionHandlerRegistry.set(action, { domain, handler });
+    }
+  }
+
+  async function dispatchAction(action, context) {
+    const registration = actionHandlerRegistry.get(action);
+    if (!registration) return false;
+    await registration.handler(action, context);
+    return true;
+  }
 
   class AuthenticationRequired extends Error {}
 

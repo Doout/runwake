@@ -12,12 +12,29 @@ trap 'rm -f "$APP_TEMP" "$STYLE_TEMP"' EXIT HUP INT TERM
 for source_file in \
   "$ROOT/webembed/src/app/00-core.js" \
   "$ROOT/webembed/src/app/10-workloads.js" \
+  "$ROOT/webembed/src/app/12-workload-support.js" \
   "$ROOT/webembed/src/app/20-topology.js" \
   "$ROOT/webembed/src/app/30-connections-settings.js" \
-  "$ROOT/webembed/src/app/40-activity-metrics.js" \
+  "$ROOT/webembed/src/app/40-activity-shell.js" \
+  "$ROOT/webembed/src/app/41-log-scope.js" \
+  "$ROOT/webembed/src/app/42-activity-streams.js" \
+  "$ROOT/webembed/src/app/43-log-rendering.js" \
+  "$ROOT/webembed/src/app/44-log-formatters.js" \
   "$ROOT/webembed/src/app/50-connection-editor.js" \
+  "$ROOT/webembed/src/app/51-connection-imports.js" \
+  "$ROOT/webembed/src/app/52-connection-submission.js" \
+  "$ROOT/webembed/src/app/53-agent-deployment.js" \
   "$ROOT/webembed/src/app/60-personal-workflows.js" \
-  "$ROOT/webembed/src/app/70-runtime-actions.js"
+  "$ROOT/webembed/src/app/61-investigations.js" \
+  "$ROOT/webembed/src/app/70-runtime-dialogs.js" \
+  "$ROOT/webembed/src/app/71-connection-actions.js" \
+  "$ROOT/webembed/src/app/72-personal-actions.js" \
+  "$ROOT/webembed/src/app/73-workload-actions.js" \
+  "$ROOT/webembed/src/app/74-runtime-actions.js" \
+  "$ROOT/webembed/src/app/75-topology-actions.js" \
+  "$ROOT/webembed/src/app/76-activity-actions.js" \
+  "$ROOT/webembed/src/app/78-global-events.js" \
+  "$ROOT/webembed/src/app/79-bootstrap.js"
 do
   sed -n '1,$p' "$source_file" >> "$APP_TEMP"
 done
@@ -26,8 +43,12 @@ for source_file in \
   "$ROOT/webembed/src/styles/00-foundation-workloads.css" \
   "$ROOT/webembed/src/styles/10-connections-settings.css" \
   "$ROOT/webembed/src/styles/20-metrics-topology.css" \
-  "$ROOT/webembed/src/styles/30-activity-controls.css" \
-  "$ROOT/webembed/src/styles/40-personal-responsive.css"
+  "$ROOT/webembed/src/styles/30-activity-base.css" \
+  "$ROOT/webembed/src/styles/31-modal-connection-editor.css" \
+  "$ROOT/webembed/src/styles/32-personal-workflows.css" \
+  "$ROOT/webembed/src/styles/34-connections-settings.css" \
+  "$ROOT/webembed/src/styles/35-activity-workbench.css" \
+  "$ROOT/webembed/src/styles/39-responsive-layout.css"
 do
   sed -n '1,$p' "$source_file" >> "$STYLE_TEMP"
 done
