@@ -7330,7 +7330,6 @@ current-context: runwake-openshift
     } else state.selectedWorkloads.delete(selection.dataset.selectWorkload);
     updateWorkloadSelectionBar();
   });
-
   document.addEventListener("dblclick", event => {
     const node = event.target.closest?.("[data-topology-node]");
     if (!node || event.target.closest("button, a, input, select, textarea")) return;
@@ -7536,7 +7535,6 @@ current-context: runwake-openshift
       scrollLogToLatest();
     }
   });
-
   window.addEventListener("hashchange", renderRoute);
   WORKLOAD_FILTER_DESKTOP_MEDIA.addEventListener("change", event => {
     const disclosure = document.querySelector(".workload-filter-disclosure");
