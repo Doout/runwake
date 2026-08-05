@@ -50,6 +50,10 @@ docker run --detach \
 Then open [http://localhost:8080](http://localhost:8080), add a Docker
 connection, and keep the default `unix:///var/run/docker.sock` endpoint.
 
+For the newest image built from the `main` branch, use
+`ghcr.io/doout/runwake:main-latest`. This rolling tag may contain changes that
+have not reached a versioned release yet.
+
 Rootless Docker uses a per-user socket. Set its path before running either
 command:
 

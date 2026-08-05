@@ -133,6 +133,11 @@ uploads the server archives and macOS application to the matching GitHub
 Release, and publishes multi-platform container images as
 `ghcr.io/doout/runwake:1.2.3` and `ghcr.io/doout/runwake:latest`.
 
+Every push to `main`, including merged pull requests, publishes the same
+multi-platform image as `ghcr.io/doout/runwake:main-latest` and an immutable
+`main-<short-sha>` tag. The rolling `main-latest` tag is intended for testing
+the current branch head before a versioned release.
+
 ## Useful Make targets
 
 ```text

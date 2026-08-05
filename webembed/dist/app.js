@@ -71,10 +71,11 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
 
   const WORKLOAD_STREAM_RENDER_MS = 100;
   const WORKLOAD_ROW_HEIGHT = 69;
-  const WORKLOAD_ROW_HEIGHT_NARROW = 84;
+  const WORKLOAD_ROW_HEIGHT_NARROW = 104;
   const WORKLOAD_OVERSCAN = 8;
   const WORKLOAD_AUTO_METRICS_LIMIT = 2000;
   const WORKLOAD_OVERVIEW_THRESHOLD = 500;
+  const WORKLOAD_FILTER_DESKTOP_MEDIA = window.matchMedia("(min-width: 651px)");
   const INVESTIGATION_ACTIONS = new Set([
     "new-investigation",
     "confirm-new-investigation",
@@ -468,9 +469,9 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     state.workloadWindowScrollTop = 0;
     const body = `
       <section class="page workloads-page" aria-busy="${state.workloadRefreshing}">
-        <header class="page-header">
+        <header class="page-header workloads-header">
           <div><h1 class="page-title">Workloads</h1></div>
-          <div class="header-actions">${state.connections.length ? `<button class="btn" data-action="save-workload-view">Save view</button>` : ""}<button id="refresh-workloads" class="btn" data-action="refresh-workloads" title="${html(workloadRefreshTitle())}" ${state.workloadRefreshing ? "disabled" : ""}>${html(workloadRefreshLabel())}</button><button class="btn primary" data-action="add-connection">Add connection</button></div>
+          <div class="header-actions workload-header-actions">${state.connections.length ? `<button class="btn workload-header-action" data-action="save-workload-view" aria-label="Save workload view" title="Save workload view"><span class="workload-action-symbol" aria-hidden="true">☆</span><span class="workload-action-label">Save view</span></button>` : ""}<button id="refresh-workloads" class="btn workload-header-action" data-action="refresh-workloads" aria-label="${html(workloadRefreshTitle())}" title="${html(workloadRefreshTitle())}" ${state.workloadRefreshing ? "disabled" : ""}><span class="workload-action-symbol workload-refresh-symbol" aria-hidden="true">↻</span><span class="workload-action-label">${html(workloadRefreshLabel())}</span></button><button class="btn primary workload-header-action" data-action="add-connection" aria-label="Add connection" title="Add connection"><span class="workload-action-symbol" aria-hidden="true">＋</span><span class="workload-action-label">Add connection</span></button></div>
         </header>
         <div id="workload-errors">${workloadErrorNotice()}</div>
         <div id="metrics-availability">${metricsAvailability()}</div>
@@ -480,9 +481,15 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
           <div id="workload-selection-bar">${workloadSelectionBar()}</div>
           <div class="toolbar">
             <div class="search-wrap"><label class="sr-only" for="workload-search">Search workloads</label><input id="workload-search" class="field" type="search" placeholder="Search name, namespace, image…" value="${html(filters.search)}"></div>
-            ${renderWorkloadFilterMenu("connection-filter", "connection", "Connection", [{ value: "", label: "All connections" }, ...state.connections.map(connection => ({ value: connection.id, label: connection.name }))], filters.connection, true)}
-            ${renderWorkloadFilterMenu("namespace-filter", "namespace", "Namespace", [{ value: "", label: "All namespaces" }, ...namespaces.map(namespace => ({ value: namespace, label: namespace }))], filters.namespace, true)}
-            ${renderWorkloadFilterMenu("status-filter", "status", "State", [{ value: "", label: "Any state" }, { value: "good", label: "Ready" }, { value: "warn", label: "Needs attention" }, { value: "bad", label: "Failed" }, { value: "other", label: "Other" }], filters.status)}
+            <details class="workload-filter-disclosure" ${WORKLOAD_FILTER_DESKTOP_MEDIA.matches ? "open" : ""}>
+              <summary><span>Filters</span><span class="workload-filter-summary"><span id="workload-filter-count" class="workload-filter-count" ${workloadActiveFilterCount() ? "" : "hidden"}>${html(workloadActiveFilterCount())}</span><span id="workload-filter-copy">${html(workloadFilterSummary())}</span><span class="workload-filter-chevron" aria-hidden="true"></span></span></summary>
+              <div class="workload-filter-grid">
+                ${renderWorkloadFilterMenu("connection-filter", "connection", "Connection", [{ value: "", label: "All connections" }, ...state.connections.map(connection => ({ value: connection.id, label: connection.name }))], filters.connection, true)}
+                ${renderWorkloadFilterMenu("namespace-filter", "namespace", "Namespace", [{ value: "", label: "All namespaces" }, ...namespaces.map(namespace => ({ value: namespace, label: namespace }))], filters.namespace, true)}
+                ${renderWorkloadFilterMenu("status-filter", "status", "State", [{ value: "", label: "Any state" }, { value: "good", label: "Ready" }, { value: "warn", label: "Needs attention" }, { value: "bad", label: "Failed" }, { value: "other", label: "Other" }], filters.status)}
+                <button id="workload-filter-clear" type="button" class="workload-filter-reset" data-action="clear-filters" ${workloadActiveFilterCount() ? "" : "hidden"}>Clear filters</button>
+              </div>
+            </details>
           </div>` : ""}
         <div id="workload-content">${workloadContent(filtered)}</div>
       </section>`;
@@ -803,9 +810,35 @@ FORM: Fixed instrumentation rack, fifth grounded Operate structure, staged aroun
     const refresh = document.getElementById("refresh-workloads");
     if (refresh) {
       refresh.disabled = state.workloadRefreshing;
-      refresh.textContent = workloadRefreshLabel();
+      refresh.querySelector(".workload-action-label")?.replaceChildren(document.createTextNode(workloadRefreshLabel()));
       refresh.title = workloadRefreshTitle();
+      refresh.setAttribute("aria-label", workloadRefreshTitle());
     }
+    updateWorkloadFilterSummary();
+  }
+
+  function workloadActiveFilterCount() {
+    return Number(filterValues(state.filters.connection).length > 0)
+      + Number(filterValues(state.filters.namespace).length > 0)
+      + Number(Boolean(state.filters.status));
+  }
+
+  function workloadFilterSummary() {
+    const count = workloadActiveFilterCount();
+    return count ? `${count} active` : "Refine results";
+  }
+
+  function updateWorkloadFilterSummary() {
+    const count = workloadActiveFilterCount();
+    const badge = document.getElementById("workload-filter-count");
+    const copy = document.getElementById("workload-filter-copy");
+    const clear = document.getElementById("workload-filter-clear");
+    if (badge) {
+      badge.textContent = String(count);
+      badge.hidden = !count;
+    }
+    if (copy) copy.textContent = workloadFilterSummary();
+    if (clear) clear.hidden = !count;
   }
 
   function workloadRefreshLabel() {
@@ -7271,5 +7304,9 @@ current-context: runwake-openshift
   });
 
   window.addEventListener("hashchange", renderRoute);
+  WORKLOAD_FILTER_DESKTOP_MEDIA.addEventListener("change", event => {
+    const disclosure = document.querySelector(".workload-filter-disclosure");
+    if (disclosure) disclosure.open = event.matches;
+  });
   renderRoute();
 })();
